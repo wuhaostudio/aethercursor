@@ -1,0 +1,18 @@
+{
+  "id": "agent.cloud.translate",
+  "name": "Cloud Translation",
+  "version": "0.1.0",
+  "description": "Translates selected text or OCR content.",
+  "capabilities": ["translate"],
+  "input_types": ["text", "ocr_text", "screen_region", "image_region"],
+  "output_types": ["markdown", "plain_text"],
+  "execution_mode": "cloud",
+  "latency_level": "short",
+  "cost_level": "low",
+  "required_permissions": ["screen_region_read", "cloud_upload"],
+  "privacy_policy": {
+    "requires_upload": true,
+    "sensitive_data_allowed": false,
+    "user_confirmation": "first_time"
+  }
+}

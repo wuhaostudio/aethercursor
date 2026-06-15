@@ -1,0 +1,18 @@
+{
+  "id": "agent.local.ocr",
+  "name": "Local OCR",
+  "version": "0.1.0",
+  "description": "Extracts text from a selected screen region without cloud upload.",
+  "capabilities": ["extract_text"],
+  "input_types": ["screen_region", "image_region"],
+  "output_types": ["ocr_text", "plain_text"],
+  "execution_mode": "local",
+  "latency_level": "short",
+  "cost_level": "none",
+  "required_permissions": ["screen_region_read"],
+  "privacy_policy": {
+    "requires_upload": false,
+    "sensitive_data_allowed": true,
+    "user_confirmation": "never"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "id": "agent.cloud.explain",
+  "name": "Cloud Text Explain",
+  "version": "0.1.0",
+  "description": "Explains selected text or OCR content in plain language.",
+  "capabilities": ["explain"],
+  "input_types": ["text", "ocr_text", "screen_region", "image_region"],
+  "output_types": ["markdown", "plain_text"],
+  "execution_mode": "cloud",
+  "latency_level": "short",
+  "cost_level": "low",
+  "required_permissions": ["screen_region_read", "cloud_upload"],
+  "privacy_policy": {
+    "requires_upload": true,
+    "sensitive_data_allowed": false,
+    "user_confirmation": "first_time"
+  }
+}

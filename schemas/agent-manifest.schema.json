@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aethercursor.local/schemas/agent-manifest.schema.json",
+  "title": "AgentManifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "name",
+    "version",
+    "description",
+    "capabilities",
+    "input_types",
+    "output_types",
+    "execution_mode",
+    "latency_level",
+    "cost_level",
+    "required_permissions",
+    "privacy_policy"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "enum": [
+          "explain",
+          "translate",
+          "summarize",
+          "extract_text",
+          "ask_ai",
+          "send_to_agent",
+          "image_understanding",
+          "pronunciation",
+          "code_review",
+          "table_extraction",
+          "question_answering"
+        ]
+      }
+    },
+    "input_types": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "enum": ["text", "ocr_text", "image_region", "screen_region", "app_metadata"]
+      }
+    },
+    "output_types": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "enum": ["plain_text", "markdown", "ocr_text", "key_value", "error", "popup"]
+      }
+    },
+    "execution_mode": {
+      "enum": ["local", "cloud", "hybrid"]
+    },
+    "latency_level": {
+      "enum": ["instant", "short", "medium", "long"]
+    },
+    "cost_level": {
+      "enum": ["none", "low", "medium", "high"]
+    },
+    "required_permissions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "privacy_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requires_upload", "sensitive_data_allowed", "user_confirmation"],
+      "properties": {
+        "requires_upload": {
+          "type": "boolean"
+        },
+        "sensitive_data_allowed": {
+          "type": "boolean"
+        },
+        "user_confirmation": {
+          "enum": ["never", "first_time", "every_time"]
+        }
+      }
+    }
+  }
+}

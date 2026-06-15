@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aethercursor.local/schemas/agent-result.schema.json",
+  "title": "AgentResult",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "result_id",
+    "context_id",
+    "agent_id",
+    "intent",
+    "status",
+    "output_type",
+    "output",
+    "runtime",
+    "privacy",
+    "error"
+  ],
+  "properties": {
+    "result_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "context_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "agent_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "intent": {
+      "enum": ["explain", "translate", "summarize", "extract_text", "ask_ai", "send_to_agent"]
+    },
+    "status": {
+      "enum": ["success", "error", "cancelled", "blocked", "timeout"]
+    },
+    "output_type": {
+      "enum": ["plain_text", "markdown", "ocr_text", "key_value", "error", "popup"]
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["text"],
+      "properties": {
+        "text": {
+          "type": "string"
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["execution_mode", "model", "duration_ms"],
+      "properties": {
+        "execution_mode": {
+          "enum": ["local", "cloud", "hybrid"]
+        },
+        "model": {
+          "type": ["string", "null"]
+        },
+        "duration_ms": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uploaded", "stored_by_aethercursor"],
+      "properties": {
+        "uploaded": {
+          "type": "boolean"
+        },
+        "stored_by_aethercursor": {
+          "type": "boolean"
+        }
+      }
+    },
+    "error": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

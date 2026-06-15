@@ -1,0 +1,78 @@
+.selection-layer {
+  position: absolute;
+  min-width: 1px;
+  min-height: 1px;
+  border: 1px solid var(--overlay-highlight);
+  border-radius: var(--overlay-radius);
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.028) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.028) 1px, transparent 1px),
+    rgba(80, 210, 255, 0.08);
+  background-size: 10px 10px;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.05),
+    0 0 22px rgba(80, 210, 255, 0.22);
+  backdrop-filter: blur(2px);
+}
+
+.selection-layer--active {
+  animation: selection-layer-pulse 1.2s ease-in-out infinite;
+}
+
+.selection-layer--small {
+  border-color: rgba(255, 198, 92, 0.72);
+  background: rgba(255, 198, 92, 0.08);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 0 18px rgba(255, 198, 92, 0.24);
+}
+
+.selection-layer__corner {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-color: rgba(245, 248, 255, 0.9);
+}
+
+.selection-layer__corner--tl {
+  left: -1px;
+  top: -1px;
+  border-left: 1px solid;
+  border-top: 1px solid;
+}
+
+.selection-layer__corner--tr {
+  right: -1px;
+  top: -1px;
+  border-right: 1px solid;
+  border-top: 1px solid;
+}
+
+.selection-layer__corner--bl {
+  left: -1px;
+  bottom: -1px;
+  border-left: 1px solid;
+  border-bottom: 1px solid;
+}
+
+.selection-layer__corner--br {
+  right: -1px;
+  bottom: -1px;
+  border-right: 1px solid;
+  border-bottom: 1px solid;
+}
+
+@keyframes selection-layer-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.05),
+      0 0 18px rgba(80, 210, 255, 0.18);
+  }
+
+  50% {
+    box-shadow:
+      0 0 0 1px rgba(255, 255, 255, 0.08),
+      0 0 28px rgba(80, 210, 255, 0.38);
+  }
+}

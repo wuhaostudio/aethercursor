@@ -1,0 +1,197 @@
+.overlay-root {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+  color: var(--overlay-text);
+}
+
+.overlay-root--preview {
+  position: absolute;
+  overflow: hidden;
+  border: 1px solid rgba(120, 220, 255, 0.18);
+  border-radius: var(--overlay-radius);
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    rgba(5, 8, 12, 0.35);
+  background-size: 24px 24px;
+}
+
+.overlay-cursor-ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 52px;
+  height: 52px;
+  border: 1px solid var(--overlay-highlight);
+  border-radius: 999px;
+  box-shadow:
+    0 0 16px rgba(80, 210, 255, 0.4),
+    inset 0 0 16px rgba(80, 210, 255, 0.16);
+  transform: translate(-50%, -50%);
+}
+
+.overlay-mode-pill {
+  position: absolute;
+  left: 18px;
+  top: 18px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--overlay-border);
+  border-radius: var(--overlay-radius);
+  background: var(--overlay-background);
+  box-shadow: var(--overlay-shadow);
+  backdrop-filter: blur(var(--overlay-blur));
+  color: var(--overlay-muted-text);
+  font-size: 0.8rem;
+}
+
+.overlay-target-hint {
+  position: absolute;
+  left: 34%;
+  top: 34%;
+  min-width: 132px;
+  min-height: 72px;
+  padding: 6px 8px;
+  border: 1px solid rgba(120, 220, 255, 0.26);
+  border-radius: var(--overlay-radius);
+  color: var(--overlay-muted-text);
+  font-size: 0.75rem;
+}
+
+.action-menu {
+  position: absolute;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: min(360px, calc(100vw - 32px));
+  padding: 8px;
+  border: 1px solid var(--overlay-border);
+  border-radius: var(--overlay-radius);
+  background: var(--overlay-background);
+  box-shadow: var(--overlay-shadow);
+  backdrop-filter: blur(var(--overlay-blur));
+  pointer-events: auto;
+}
+
+.action-menu button,
+.result-canvas button,
+.permission-prompt button {
+  min-height: 28px;
+  border: 1px solid rgba(120, 220, 255, 0.22);
+  border-radius: var(--overlay-radius);
+  background: rgba(12, 18, 28, 0.68);
+  color: var(--overlay-text);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.action-menu button {
+  padding: 0 9px;
+}
+
+.action-menu button:hover,
+.result-canvas button:hover,
+.permission-prompt button:hover {
+  border-color: var(--overlay-highlight);
+}
+
+.result-canvas,
+.permission-prompt {
+  position: absolute;
+  display: grid;
+  gap: 8px;
+  width: min(420px, calc(100vw - 32px));
+  max-height: min(520px, calc(100vh - 32px));
+  padding: 10px;
+  overflow: auto;
+  border: 1px solid var(--overlay-border);
+  border-radius: var(--overlay-radius);
+  background: var(--overlay-background);
+  box-shadow: var(--overlay-shadow);
+  backdrop-filter: blur(var(--overlay-blur));
+  pointer-events: auto;
+}
+
+.permission-prompt {
+  width: min(340px, calc(100vw - 32px));
+}
+
+.result-canvas__header,
+.result-canvas__footer,
+.permission-prompt header,
+.permission-prompt__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.result-canvas__header > span {
+  color: var(--overlay-text);
+  font-size: 0.86rem;
+}
+
+.permission-prompt header span {
+  color: var(--overlay-text);
+  font-size: 0.86rem;
+}
+
+.permission-prompt header small,
+.permission-prompt__reason {
+  color: var(--overlay-muted-text);
+}
+
+.permission-prompt p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.result-canvas__tools,
+.result-canvas__more {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.result-canvas button,
+.permission-prompt button {
+  padding: 0 8px;
+}
+
+.result-canvas__block {
+  border: 1px solid rgba(120, 220, 255, 0.14);
+  border-radius: var(--overlay-radius);
+  padding: 9px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.result-canvas__block h3 {
+  margin: 0 0 5px;
+  color: var(--overlay-muted-text);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.result-canvas__block p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--overlay-text);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.result-canvas__block--error {
+  border-color: rgba(255, 130, 130, 0.34);
+}
+
+.result-canvas__footer {
+  align-items: flex-start;
+}
