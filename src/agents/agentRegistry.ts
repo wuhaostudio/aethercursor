@@ -1,6 +1,9 @@
 import cloudExplainManifest from "../../agents/cloud-explain.json";
 import cloudSummarizeManifest from "../../agents/cloud-summarize.json";
 import cloudTranslateManifest from "../../agents/cloud-translate.json";
+import cloudDeepExplainManifest from "../../agents/cloud-deep-explain.json";
+import cloudTableExtractManifest from "../../agents/cloud-table-extract.json";
+import cloudVisionAnalyzeManifest from "../../agents/cloud-vision-analyze.json";
 import localOcrManifest from "../../agents/local-ocr.json";
 import {
   validateAgentManifest,
@@ -32,7 +35,10 @@ const builtInManifestValues: readonly unknown[] = [
   localOcrManifest,
   cloudExplainManifest,
   cloudTranslateManifest,
-  cloudSummarizeManifest
+  cloudSummarizeManifest,
+  cloudDeepExplainManifest,
+  cloudTableExtractManifest,
+  cloudVisionAnalyzeManifest
 ];
 
 const intentOrder: readonly Intent[] = ["extract_text", "explain", "translate", "summarize", "ask_ai", "send_to_agent"];

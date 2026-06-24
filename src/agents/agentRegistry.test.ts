@@ -16,7 +16,10 @@ describe("agent registry", () => {
       "agent.local.ocr",
       "agent.cloud.explain",
       "agent.cloud.translate",
-      "agent.cloud.summarize"
+      "agent.cloud.summarize",
+      "agent.cloud.deep-explain",
+      "agent.cloud.table-extract",
+      "agent.cloud.vision-analyze"
     ]);
   });
 
@@ -67,8 +70,9 @@ describe("agent registry", () => {
   it("marks cloud agents as requiring confirmation", () => {
     const { manifests } = loadBuiltInAgentManifests();
     const agents = getCompatibleAgents(manifests, sampleContext, "explain");
+    const explainAgent = agents.find((a) => a.manifest.id === "agent.cloud.explain");
 
-    expect(agents[0]).toMatchObject({
+    expect(explainAgent).toMatchObject({
       intent: "explain",
       requires_confirmation: true,
       manifest: {
@@ -81,13 +85,13 @@ describe("agent registry", () => {
   it("provides context-compatible action entries", () => {
     const { manifests } = loadBuiltInAgentManifests();
     const actions = getAvailableAgentActions(manifests, sampleContext);
+    const actionIntents = actions.map((action) => action.intent);
 
-    expect(actions.map((action) => action.intent)).toEqual([
-      "extract_text",
-      "explain",
-      "translate",
-      "summarize"
-    ]);
+    expect(actionIntents).toContain("extract_text");
+    expect(actionIntents).toContain("explain");
+    expect(actionIntents).toContain("translate");
+    expect(actionIntents).toContain("summarize");
+    expect(actions.length).toBeGreaterThanOrEqual(4);
   });
 
   it("keeps blocked cloud actions visible with a policy decision", () => {

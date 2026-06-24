@@ -20,15 +20,15 @@ export interface OverlayViewModel {
 
 const labels: Record<CursorStatus, string> = {
   normal: "",
-  armed: "Armed",
-  inspecting: "Inspecting",
-  selecting: "Selecting",
-  resolving: "Resolving",
-  action_pending: "Action pending",
-  confirming: "Confirming",
-  thinking: "Thinking",
-  result: "Result",
-  error: "Error"
+  armed: "已激活",
+  inspecting: "检测中",
+  selecting: "选择中",
+  resolving: "解析中",
+  action_pending: "待选择",
+  confirming: "待确认",
+  thinking: "思考中",
+  result: "结果",
+  error: "错误"
 };
 
 export function createOverlayViewModel(state: CursorState): OverlayViewModel {

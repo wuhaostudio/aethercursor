@@ -1,9 +1,65 @@
 use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
+use tauri::{AppHandle, Emitter};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+
+const GLOBAL_SHORTCUT: &str = "Alt+Shift+S";
+
+#[derive(Debug, Clone, Serialize)]
+struct GlobalShortcutEvent {
+    shortcut: String,
+    state: String,
+}
 
 #[tauri::command]
 fn app_status() -> &'static str {
-    "p0-ready"
+    "p11-ready"
+}
+
+fn setup_global_shortcut(app: &AppHandle) -> Result<(), String> {
+    let shortcut: Shortcut = GLOBAL_SHORTCUT
+        .parse()
+        .map_err(|e| format!("invalid shortcut: {}", e))?;
+
+    let app_handle = app.clone();
+
+    app.global_shortcut()
+        .on_shortcut(shortcut, move |_app, _shortcut, event| {
+            let state = match event.state {
+                ShortcutState::Pressed => "pressed",
+                ShortcutState::Released => "released",
+            };
+
+            let _ = app_handle.emit(
+                "global-shortcut",
+                GlobalShortcutEvent {
+                    shortcut: GLOBAL_SHORTCUT.to_string(),
+                    state: state.to_string(),
+                },
+            );
+        })
+        .map_err(|e| format!("failed to register shortcut: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+fn register_global_shortcut(app: AppHandle) -> Result<String, String> {
+    setup_global_shortcut(&app)?;
+    Ok(format!("registered {}", GLOBAL_SHORTCUT))
+}
+
+#[tauri::command]
+fn unregister_global_shortcut(app: AppHandle) -> Result<String, String> {
+    let shortcut: Shortcut = GLOBAL_SHORTCUT
+        .parse()
+        .map_err(|e| format!("invalid shortcut: {}", e))?;
+
+    app.global_shortcut()
+        .unregister(shortcut)
+        .map_err(|e| format!("failed to unregister shortcut: {}", e))?;
+
+    Ok(format!("unregistered {}", GLOBAL_SHORTCUT))
 }
 
 #[derive(Debug, Deserialize)]
@@ -85,10 +141,85 @@ fn capture_region_to_file(_request: &CaptureRegionRequest, _path: &PathBuf) -> R
     Err("native region capture is only implemented on Windows".to_string())
 }
 
+#[derive(Debug, Deserialize)]
+struct ReadCaptureFileRequest {
+    context_id: String,
+}
+
+#[derive(Debug, Serialize)]
+struct ReadCaptureFileResponse {
+    context_id: String,
+    data_base64: String,
+    file_path: String,
+    size_bytes: u64,
+}
+
+#[tauri::command]
+fn read_capture_file(request: ReadCaptureFileRequest) -> Result<ReadCaptureFileResponse, String> {
+    if request.context_id.trim().is_empty() {
+        return Err("context_id is required".to_string());
+    }
+
+    let path = capture_path(&request.context_id)?;
+
+    let metadata = fs::metadata(&path)
+        .map_err(|error| format!("failed to read capture file metadata: {error}"))?;
+    let bytes = fs::read(&path).map_err(|error| format!("failed to read capture file: {error}"))?;
+
+    Ok(ReadCaptureFileResponse {
+        context_id: request.context_id,
+        data_base64: base64_encode(&bytes),
+        file_path: path.to_string_lossy().into_owned(),
+        size_bytes: metadata.len(),
+    })
+}
+
+fn base64_encode(data: &[u8]) -> String {
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut result = Vec::with_capacity((data.len() + 2) / 3 * 4);
+
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+
+        result.push(CHARS[((triple >> 18) & 0x3F) as usize]);
+        result.push(CHARS[((triple >> 12) & 0x3F) as usize]);
+
+        if chunk.len() > 1 {
+            result.push(CHARS[((triple >> 6) & 0x3F) as usize]);
+        } else {
+            result.push(b'=');
+        }
+
+        if chunk.len() > 2 {
+            result.push(CHARS[(triple & 0x3F) as usize]);
+        } else {
+            result.push(b'=');
+        }
+    }
+
+    String::from_utf8(result).unwrap_or_default()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![app_status, capture_region])
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .invoke_handler(tauri::generate_handler![
+            app_status,
+            capture_region,
+            read_capture_file,
+            register_global_shortcut,
+            unregister_global_shortcut
+        ])
+        .setup(|app| {
+            if let Err(e) = setup_global_shortcut(app.handle()) {
+                eprintln!("global shortcut setup failed: {}", e);
+            }
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running AetherCursor");
 }

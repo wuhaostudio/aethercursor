@@ -18,7 +18,7 @@ describe("policy decisions", () => {
       status: "allow",
       privacy_level: 1,
       requires_confirmation: false,
-      reason: "Local processing only."
+      reason: "仅本地处理。"
     });
   });
 

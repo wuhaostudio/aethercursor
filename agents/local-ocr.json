@@ -1,8 +1,8 @@
 {
   "id": "agent.local.ocr",
-  "name": "Local OCR",
+  "name": "本地OCR识别",
   "version": "0.1.0",
-  "description": "Extracts text from a selected screen region without cloud upload.",
+  "description": "从选中的屏幕区域提取文字，无需云端上传。",
   "capabilities": ["extract_text"],
   "input_types": ["screen_region", "image_region"],
   "output_types": ["ocr_text", "plain_text"],

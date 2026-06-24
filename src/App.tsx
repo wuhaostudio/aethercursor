@@ -12,8 +12,6 @@ import { confirmCloudUpload } from "./policy/policy";
 import { executeAgentRuntime } from "./runtime/agentRuntime";
 import { cursorReducer, initialCursorState, type CursorEvent, type CursorState } from "./cursor/stateMachine";
 import {
-  handleKeyDown,
-  handleKeyUp,
   handlePointerDown,
   handlePointerMove,
   handlePointerUp,
@@ -22,6 +20,7 @@ import {
   type InputTransition
 } from "./input/inputEvents";
 import { appendInputDebugLog, formatPointerDetail, type InputDebugEntry } from "./input/inputDebugLog";
+import { ttsPlayer, type TtsPlaybackState } from "./tts/ttsPlayer";
 import type { ContextProtocol } from "./shared/context";
 import { phaseZeroModules } from "./shared/project";
 import type { AgentResult } from "./shared/result";
@@ -66,9 +65,20 @@ function App() {
   const [nativeCapturePath, setNativeCapturePath] = useState<string | null>(null);
   const [moreAgentsOpen, setMoreAgentsOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<RoutedAgent | null>(null);
+  const [ttsState, setTtsState] = useState<TtsPlaybackState>({
+    isPlaying: false,
+    isPaused: false,
+    currentText: null
+  });
   const availableActions = latestContext
     ? getAvailableAgentActions(builtInAgentRegistry.manifests, latestContext)
     : [];
+
+  const moreAgents = latestResult && latestContext
+    ? availableActions.filter(
+        (action) => !(action.manifest.id === latestResult.agent_id && action.intent === latestResult.intent)
+      )
+    : availableActions;
 
   const commitTransition = useCallback((transition: InputTransition, detail: string) => {
     inputSessionRef.current = transition.session;
@@ -130,8 +140,30 @@ function App() {
   }, []);
 
   const handleReadAloud = useCallback(() => {
-    setInputLog((entries) => appendInputDebugLog(entries, { type: "result.read_aloud", detail: "mock" }));
-  }, []);
+    const text = latestResult?.output.text ?? latestContext?.content.ocr_text ?? latestContext?.content.selected_text;
+
+    if (!text) {
+      setInputLog((entries) => appendInputDebugLog(entries, { type: "result.read_aloud.skipped", detail: "empty" }));
+      return;
+    }
+
+    if (ttsState.isPlaying && !ttsState.isPaused) {
+      ttsPlayer.pause();
+      setInputLog((entries) => appendInputDebugLog(entries, { type: "result.read_aloud.paused", detail: text.slice(0, 20) }));
+      return;
+    }
+
+    if (ttsState.isPaused) {
+      ttsPlayer.resume();
+      setInputLog((entries) => appendInputDebugLog(entries, { type: "result.read_aloud.resumed", detail: text.slice(0, 20) }));
+      return;
+    }
+
+    ttsPlayer.speak(text).catch((error) => {
+      setInputLog((entries) => appendInputDebugLog(entries, { type: "result.read_aloud.failed", detail: error.message }));
+    });
+    setInputLog((entries) => appendInputDebugLog(entries, { type: "result.read_aloud.started", detail: text.slice(0, 20) }));
+  }, [latestResult, latestContext, ttsState]);
 
   const handleCopyResult = useCallback(() => {
     const text = latestResult?.output.text ?? latestContext?.content.ocr_text ?? latestContext?.content.selected_text;
@@ -167,6 +199,43 @@ function App() {
     dispatchCursorEvent({ type: "agent.switch_requested" });
   }, []);
 
+  const handleSelectAgent = useCallback((agent: RoutedAgent) => {
+    setMoreAgentsOpen(false);
+    setPendingAction(agent);
+    setLatestResult(null);
+    setInputLog((entries) =>
+      appendInputDebugLog(entries, {
+        type: "result.select_agent",
+        detail: `${agent.intent}:${agent.manifest.id}`
+      })
+    );
+
+    if (agent.policy_decision.status === "block") {
+      dispatchCursorEvent({
+        type: "policy.blocked",
+        message: agent.policy_decision.reason
+      });
+      return;
+    }
+
+    if (agent.policy_decision.requires_confirmation) {
+      dispatchCursorEvent({
+        type: "action.selected",
+        intent: agent.intent,
+        agent_id: agent.manifest.id,
+        requires_confirmation: true
+      });
+      return;
+    }
+
+    dispatchCursorEvent({
+      type: "action.selected",
+      intent: agent.intent,
+      agent_id: agent.manifest.id,
+      requires_confirmation: false
+    });
+  }, []);
+
   const handleMoreAgents = useCallback(() => {
     setMoreAgentsOpen((open) => !open);
     setInputLog((entries) => appendInputDebugLog(entries, { type: "result.more_agents", detail: "toggle" }));
@@ -180,29 +249,26 @@ function App() {
 
   useEffect(() => {
     const handleWindowKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Alt" || event.key === "Escape") {
+      if (event.key === "Escape") {
         event.preventDefault();
+        dispatchCursorEvent({ type: "cancel" });
       }
-
-      commitTransition(handleKeyDown(inputSessionRef.current, event.key), event.key);
-    };
-
-    const handleWindowKeyUp = (event: KeyboardEvent) => {
-      if (event.key === "Alt") {
-        event.preventDefault();
-      }
-
-      commitTransition(handleKeyUp(inputSessionRef.current, event.key), event.key);
     };
 
     window.addEventListener("keydown", handleWindowKeyDown);
-    window.addEventListener("keyup", handleWindowKeyUp);
 
     return () => {
       window.removeEventListener("keydown", handleWindowKeyDown);
-      window.removeEventListener("keyup", handleWindowKeyUp);
     };
-  }, [commitTransition]);
+  }, [dispatchCursorEvent]);
+
+  useEffect(() => {
+    const unsubscribe = ttsPlayer.subscribe((state) => {
+      setTtsState(state);
+    });
+
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     if (cursorState.status !== "resolving" || !cursorState.selection) {
@@ -330,6 +396,27 @@ function App() {
       );
 
       if (result.status === "success") {
+        if (result.intent === "extract_text" && typeof result.output.ocr_text === "string") {
+          setLatestContext((currentContext) => {
+            if (!currentContext || currentContext.context_id !== result.context_id) {
+              return currentContext;
+            }
+
+            return {
+              ...currentContext,
+              content: {
+                ...currentContext.content,
+                ocr_text: result.output.ocr_text as string
+              },
+              metadata: {
+                ...currentContext.metadata,
+                content_guess: ["text", "image"],
+                confidence: Math.max(currentContext.metadata.confidence, 0.8)
+              }
+            };
+          });
+        }
+
         dispatchCursorEvent({ type: "agent.succeeded", result_id: result.result_id });
         return;
       }
@@ -347,9 +434,7 @@ function App() {
 
   const handlePointerDownCapture = useCallback(
     (event: React.PointerEvent<HTMLElement>) => {
-      if (inputSessionRef.current.altActive) {
-        event.currentTarget.setPointerCapture(event.pointerId);
-      }
+      event.currentTarget.setPointerCapture(event.pointerId);
 
       commitTransition(
         handlePointerDown(inputSessionRef.current, { x: event.clientX, y: event.clientY }),
@@ -396,6 +481,9 @@ function App() {
         result={latestResult}
         actions={availableActions}
         moreAgentsOpen={moreAgentsOpen}
+        moreAgents={moreAgents}
+        isReading={ttsState.isPlaying}
+        isReadingPaused={ttsState.isPaused}
         onActionSelect={handleActionSelect}
         pendingAction={pendingAction}
         errorMessage={cursorState.error ?? null}
@@ -406,38 +494,37 @@ function App() {
         onPinResult={handlePinResult}
         onSwitchAgent={handleSwitchAgent}
         onMoreAgents={handleMoreAgents}
+        onSelectAgent={handleSelectAgent}
         onCloseResult={handleCloseResult}
       />
       <section className="debug-window" aria-labelledby="app-title">
         <div className="status-row">
           <span className="status-dot" aria-hidden="true" />
-          <span>P0 Debug Window</span>
+          <span>调试窗口</span>
         </div>
-        <h1 id="app-title">AetherCursor</h1>
+        <h1 id="app-title">AetherCursor 灵犀光标</h1>
         <p className="summary">
-          Smart cursor framework scaffold for explicit activation, local context capture,
-          privacy policy checks, agent routing, and spatial result rendering.
+          桌面智能光标层框架，支持显式激活、本地上下文捕获、隐私策略检查、代理路由和空间结果渲染。
         </p>
-        <section className="input-debug" aria-label="Input debug panel">
+        <section className="input-debug" aria-label="输入调试面板">
           <div className="input-debug__status">
-            <span>Status: {cursorState.status}</span>
-            <span>Alt: {inputSession.altActive ? "active" : "inactive"}</span>
-            <span>Agents: {builtInAgentRegistry.manifests.length}</span>
-            <span>Routes: {availableActions.length}</span>
-            <span>Pins: {pinnedResults.length}</span>
+            <span>状态: {cursorState.status}</span>
+            <span>代理数: {builtInAgentRegistry.manifests.length}</span>
+            <span>可用路由: {availableActions.length}</span>
+            <span>固定数: {pinnedResults.length}</span>
             <span>
-              Pointer:{" "}
+              指针:{" "}
               {inputSession.lastPointer
                 ? formatPointerDetail(inputSession.lastPointer.x, inputSession.lastPointer.y)
-                : "none"}
+                : "无"}
             </span>
           </div>
           <div className="input-debug__actions">
             <button
               type="button"
-              onClick={() => dispatchSyntheticEvent({ type: "context.resolved" }, "debug.context.resolved", "manual")}
+              onClick={() => dispatchSyntheticEvent({ type: "context.resolved" }, "debug.context.resolved", "手动")}
             >
-              Resolve
+              解析
             </button>
             <button
               type="button"
@@ -450,20 +537,20 @@ function App() {
                     requires_confirmation: false
                   },
                   "debug.action.extract_text",
-                  "manual"
+                  "手动"
                 )
               }
             >
-              Local Action
+              本地操作
             </button>
             <button
               type="button"
-              onClick={() => dispatchSyntheticEvent({ type: "cancel" }, "debug.cancel", "manual")}
+              onClick={() => dispatchSyntheticEvent({ type: "cancel" }, "debug.cancel", "手动")}
             >
-              Cancel
+              取消
             </button>
           </div>
-          <ol className="input-debug__log" aria-label="Recent input events">
+          <ol className="input-debug__log" aria-label="最近输入事件">
             {inputLog.map((entry) => (
               <li key={entry.id}>
                 <code>{entry.type}</code>
@@ -472,44 +559,44 @@ function App() {
             ))}
           </ol>
         </section>
-        <section className="context-debug" aria-label="Latest context debug panel">
+        <section className="context-debug" aria-label="最新上下文调试面板">
           <div className="context-debug__header">
-            <h2>Latest Context</h2>
-            <span>{latestContext ? latestContext.context_id : "none"}</span>
+            <h2>最新上下文</h2>
+            <span>{latestContext ? latestContext.context_id : "无"}</span>
           </div>
           {latestContext ? (
             <dl className="context-debug__grid">
               <div>
-                <dt>Bounds</dt>
+                <dt>边界</dt>
                 <dd>
                   {latestContext.selection.bounds.x}, {latestContext.selection.bounds.y},{" "}
                   {latestContext.selection.bounds.width}x{latestContext.selection.bounds.height}
                 </dd>
               </div>
               <div>
-                <dt>Image</dt>
+                <dt>图像</dt>
                 <dd>{latestContext.content.image_ref}</dd>
               </div>
               <div>
-                <dt>Native file</dt>
-                <dd>{nativeCapturePath ?? "pending or unavailable"}</dd>
+                <dt>本地文件</dt>
+                <dd>{nativeCapturePath ?? "待处理或不可用"}</dd>
               </div>
               <div>
-                <dt>Privacy</dt>
-                <dd>{latestContext.privacy.cloud_allowed ? "cloud allowed" : "local only"}</dd>
+                <dt>隐私</dt>
+                <dd>{latestContext.privacy.cloud_allowed ? "允许云端" : "仅本地"}</dd>
               </div>
             </dl>
           ) : (
-            <p>Hold Alt and drag a region to generate a local context object.</p>
+            <p>按 Alt+Shift+S 激活并拖动选择区域以生成本地上下文对象。</p>
           )}
         </section>
         {pinnedResults.length > 0 ? (
-          <section className="context-debug" aria-label="Pinned results debug panel">
+          <section className="context-debug" aria-label="固定结果调试面板">
             <div className="context-debug__header">
-              <h2>Pinned Results</h2>
+              <h2>固定结果</h2>
               <span>{pinnedResults.length}</span>
             </div>
-            <ol className="input-debug__log" aria-label="Session pinned results">
+            <ol className="input-debug__log" aria-label="会话固定结果">
               {pinnedResults.map((result) => (
                 <li key={result.result_id}>
                   <code>{result.intent}</code>
@@ -519,7 +606,7 @@ function App() {
             </ol>
           </section>
         ) : null}
-        <div className="module-grid" aria-label="Phase zero module boundaries">
+        <div className="module-grid" aria-label="阶段零模块边界">
           {phaseZeroModules.map((module) => (
             <article className="module-tile" key={module.name}>
               <h2>{module.name}</h2>
@@ -527,7 +614,7 @@ function App() {
             </article>
           ))}
         </div>
-        <div className="overlay-preview-grid" aria-label="Overlay state preview">
+        <div className="overlay-preview-grid" aria-label="覆盖层状态预览">
           {overlayPreviewStates.map((state) => (
             <article className="overlay-preview" key={state.status}>
               <OverlayRoot state={state} preview />

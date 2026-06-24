@@ -1,8 +1,8 @@
 {
   "id": "agent.cloud.translate",
-  "name": "Cloud Translation",
+  "name": "云端翻译",
   "version": "0.1.0",
-  "description": "Translates selected text or OCR content.",
+  "description": "翻译选中的文字或OCR内容。",
   "capabilities": ["translate"],
   "input_types": ["text", "ocr_text", "screen_region", "image_region"],
   "output_types": ["markdown", "plain_text"],

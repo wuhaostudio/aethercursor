@@ -11,19 +11,19 @@ interface PermissionPromptProps {
 
 export function PermissionPrompt({ selectionBox, action, onConfirm, onCancel }: PermissionPromptProps) {
   return (
-    <section className="permission-prompt" style={positionPrompt(selectionBox)} aria-label="Permission prompt">
+    <section className="permission-prompt" style={positionPrompt(selectionBox)} aria-label="权限提示">
       <header>
-        <span>Cloud Permission</span>
-        <small>Level {action.policy_decision.privacy_level}</small>
+        <span>云端权限</span>
+        <small>级别 {action.policy_decision.privacy_level}</small>
       </header>
-      <p>{action.manifest.name} needs cloud processing for {formatIntent(action.intent)}.</p>
+      <p>{action.manifest.name} 需要云端处理以执行{formatIntent(action.intent)}。</p>
       <p className="permission-prompt__reason">{action.policy_decision.reason}</p>
       <div className="permission-prompt__actions">
         <button type="button" onClick={onCancel}>
-          Cancel
+          取消
         </button>
         <button type="button" onClick={onConfirm}>
-          Confirm
+          确认
         </button>
       </div>
     </section>
@@ -45,8 +45,14 @@ function positionPrompt(selectionBox: OverlaySelectionBox | null): CSSProperties
 }
 
 function formatIntent(intent: string): string {
-  return intent
-    .split("_")
-    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
-    .join(" ");
+  const intentMap: Record<string, string> = {
+    extract_text: "提取文字",
+    explain: "解释",
+    translate: "翻译",
+    summarize: "总结",
+    ask_ai: "问AI",
+    send_to_agent: "发送到代理"
+  };
+
+  return intentMap[intent] ?? intent;
 }

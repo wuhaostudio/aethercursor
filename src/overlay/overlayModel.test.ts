@@ -14,7 +14,7 @@ describe("overlay model", () => {
   it("shows the armed cursor ring", () => {
     expect(createOverlayViewModel({ status: "armed" })).toMatchObject({
       visible: true,
-      label: "Armed",
+      label: "已激活",
       showCursorRing: true
     });
   });

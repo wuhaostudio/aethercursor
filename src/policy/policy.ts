@@ -17,7 +17,7 @@ export function decideAgentPolicy(manifest: AgentManifest, context: ContextProto
       status: "allow",
       privacy_level: 1,
       requires_confirmation: false,
-      reason: "Local processing only."
+      reason: "仅本地处理。"
     };
   }
 
@@ -26,7 +26,7 @@ export function decideAgentPolicy(manifest: AgentManifest, context: ContextProto
       status: "block",
       privacy_level: 3,
       requires_confirmation: false,
-      reason: "Sensitive content cannot be uploaded to this agent."
+      reason: "敏感内容无法上传到此代理。"
     };
   }
 
@@ -35,7 +35,7 @@ export function decideAgentPolicy(manifest: AgentManifest, context: ContextProto
       status: "confirm",
       privacy_level: 2,
       requires_confirmation: true,
-      reason: "Cloud processing requires confirmation."
+      reason: "云端处理需要您的确认。"
     };
   }
 
@@ -43,7 +43,7 @@ export function decideAgentPolicy(manifest: AgentManifest, context: ContextProto
     status: "allow",
     privacy_level: 2,
     requires_confirmation: false,
-    reason: "Cloud processing was confirmed for this context."
+    reason: "此上下文的云端处理已获确认。"
   };
 }
 

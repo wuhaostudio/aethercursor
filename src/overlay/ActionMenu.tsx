@@ -34,19 +34,25 @@ function positionMenu(selectionBox: OverlaySelectionBox): CSSProperties {
 }
 
 function formatIntent(intent: string): string {
-  return intent
-    .split("_")
-    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
-    .join(" ");
+  const intentMap: Record<string, string> = {
+    extract_text: "提取文字",
+    explain: "解释",
+    translate: "翻译",
+    summarize: "总结",
+    ask_ai: "问AI",
+    send_to_agent: "发送到代理"
+  };
+
+  return intentMap[intent] ?? intent;
 }
 
 function formatPolicyStatus(action: RoutedAgent): string {
   if (action.policy_decision.status === "block") {
-    return " Blocked";
+    return " · 已阻止";
   }
 
   if (action.requires_confirmation) {
-    return " Cloud";
+    return " · 云端";
   }
 
   return "";

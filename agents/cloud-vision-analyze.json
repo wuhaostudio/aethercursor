@@ -1,0 +1,18 @@
+{
+  "id": "agent.cloud.vision-analyze",
+  "name": "视觉分析",
+  "version": "0.1.0",
+  "description": "使用视觉模型分析屏幕区域的视觉内容。",
+  "capabilities": ["image_understanding", "explain", "question_answering"],
+  "input_types": ["screen_region", "image_region"],
+  "output_types": ["markdown", "plain_text"],
+  "execution_mode": "cloud",
+  "latency_level": "long",
+  "cost_level": "high",
+  "required_permissions": ["screen_region_read", "cloud_upload", "image_upload"],
+  "privacy_policy": {
+    "requires_upload": true,
+    "sensitive_data_allowed": false,
+    "user_confirmation": "every_time"
+  }
+}

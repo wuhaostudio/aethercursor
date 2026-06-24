@@ -1,4 +1,8 @@
 import { decideAgentPolicy } from "../policy/policy";
+import { executePaddleOcrAgent } from "../ocr/paddleOcrAdapter";
+import { isOcrServiceAvailable } from "../ocr/ocrServiceConfig";
+import { executeCloudLlmAgent } from "../cloud/cloudLlmAdapter";
+import { isCloudServiceAvailable } from "../cloud/cloudServiceConfig";
 import type { AgentManifest, Intent } from "../shared/agent";
 import type { ContextProtocol } from "../shared/context";
 import type { AgentResult } from "../shared/result";
@@ -18,7 +22,7 @@ export interface AgentRuntimeAdapter {
 
 const defaultAdapters: Record<AgentManifest["execution_mode"], AgentRuntimeAdapter> = {
   local: {
-    execute: executeMockLocalAgent
+    execute: executeLocalAgent
   },
   cloud: {
     execute: executeMockCloudAgent
@@ -66,17 +70,25 @@ async function withTimeout(
     execution,
     new Promise<AgentResult>((resolve) => {
       globalThis.setTimeout(() => {
-        resolve(createErrorResult(request, "timeout", "timeout", "Agent execution timed out.", startedAt));
+        resolve(createErrorResult(request, "timeout", "timeout", "代理执行超时。", startedAt));
       }, timeoutMs);
     })
   ]);
 }
 
-async function executeMockLocalAgent(request: AgentRuntimeRequest): Promise<AgentResult> {
+async function executeLocalAgent(request: AgentRuntimeRequest): Promise<AgentResult> {
+  if (request.manifest.id === "agent.local.ocr" && request.intent === "extract_text" && isOcrServiceAvailable()) {
+    return executePaddleOcrAgent(request);
+  }
+
   return createSuccessResult(request, "mock-local-runtime");
 }
 
 async function executeMockCloudAgent(request: AgentRuntimeRequest): Promise<AgentResult> {
+  if (isCloudServiceAvailable() && request.manifest.execution_mode === "cloud") {
+    return executeCloudLlmAgent(request);
+  }
+
   return createSuccessResult(request, "mock-cloud-runtime");
 }
 
@@ -93,7 +105,7 @@ function createSuccessResult(request: AgentRuntimeRequest, model: string): Agent
     output_type: request.manifest.output_types[0],
     output: {
       text,
-      translation: `Mock translation based on ${sourceText}.`,
+      translation: `基于 ${sourceText} 的模拟翻译。`,
       explanation: text
     },
     runtime: {
@@ -145,13 +157,13 @@ function createErrorResult(
 }
 
 function getSourceText(context: ContextProtocol): string {
-  return context.content.selected_text ?? context.content.ocr_text ?? "Selected screen region";
+  return context.content.selected_text ?? context.content.ocr_text ?? "选中的屏幕区域";
 }
 
 function createMockText(intent: Intent, sourceText: string): string {
   if (intent === "extract_text") {
-    return `Extracted local context from ${sourceText}.`;
+    return `从 ${sourceText} 提取的本地上下文。`;
   }
 
-  return `Mock ${intent} result for ${sourceText}.`;
+  return `${sourceText} 的模拟${intent}结果。`;
 }

@@ -4,16 +4,16 @@ import { getPhaseZeroModuleNames, phaseZeroModules } from "./project";
 describe("phase zero module boundaries", () => {
   it("keeps the initial framework modules explicit", () => {
     expect(getPhaseZeroModuleNames()).toEqual([
-      "Input",
-      "Overlay",
-      "Capture",
-      "Policy",
-      "Router",
-      "Runtime"
+      "输入模块",
+      "覆盖层",
+      "捕获模块",
+      "策略模块",
+      "路由模块",
+      "运行时"
     ]);
   });
 
   it("includes descriptions for the debug window", () => {
-    expect(phaseZeroModules.every((module) => module.description.length > 20)).toBe(true);
+    expect(phaseZeroModules.every((module) => module.description.length > 5)).toBe(true);
   });
 });

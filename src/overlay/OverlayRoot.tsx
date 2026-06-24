@@ -17,7 +17,10 @@ interface OverlayRootProps {
   readonly actions?: readonly RoutedAgent[];
   readonly pendingAction?: RoutedAgent | null;
   readonly moreAgentsOpen?: boolean;
+  readonly moreAgents?: readonly RoutedAgent[];
   readonly errorMessage?: string | null;
+  readonly isReading?: boolean;
+  readonly isReadingPaused?: boolean;
   readonly preview?: boolean;
   readonly onActionSelect?: (action: RoutedAgent) => void;
   readonly onPermissionConfirm?: () => void;
@@ -27,6 +30,7 @@ interface OverlayRootProps {
   readonly onPinResult?: () => void;
   readonly onSwitchAgent?: () => void;
   readonly onMoreAgents?: () => void;
+  readonly onSelectAgent?: (agent: RoutedAgent) => void;
   readonly onCloseResult?: () => void;
 }
 
@@ -37,7 +41,10 @@ export function OverlayRoot({
   actions = [],
   pendingAction = null,
   moreAgentsOpen = false,
+  moreAgents = [],
   errorMessage = null,
+  isReading = false,
+  isReadingPaused = false,
   preview = false,
   onActionSelect,
   onPermissionConfirm,
@@ -47,6 +54,7 @@ export function OverlayRoot({
   onPinResult,
   onSwitchAgent,
   onMoreAgents,
+  onSelectAgent,
   onCloseResult
 }: OverlayRootProps) {
   const model = createOverlayViewModel(state);
@@ -83,11 +91,15 @@ export function OverlayRoot({
           result={result}
           errorMessage={errorMessage}
           moreAgentsOpen={moreAgentsOpen}
+          moreAgents={moreAgents}
+          isReading={isReading}
+          isReadingPaused={isReadingPaused}
           onReadAloud={onReadAloud ?? noop}
           onCopy={onCopyResult ?? noop}
           onPin={onPinResult ?? noop}
           onSwitchAgent={onSwitchAgent ?? noop}
           onMoreAgents={onMoreAgents ?? noop}
+          onSelectAgent={onSelectAgent ?? noop}
           onClose={onCloseResult ?? noop}
         />
       ) : null}

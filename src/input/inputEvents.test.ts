@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   handleKeyDown,
-  handleKeyUp,
   handlePointerDown,
   handlePointerMove,
   handlePointerUp,
@@ -11,30 +10,18 @@ import {
 import { appendInputDebugLog, INPUT_LOG_LIMIT } from "./inputDebugLog";
 
 describe("input event mapping", () => {
-  it("maps Alt keydown and keyup to activation events", () => {
-    const pressed = handleKeyDown(initialInputSession, "Alt");
-    const released = handleKeyUp(pressed.session, "Alt");
-
-    expect(pressed.event).toEqual({ type: "activation.pressed" });
-    expect(pressed.session.altActive).toBe(true);
-    expect(released.event).toEqual({ type: "activation.released" });
-    expect(released.session.altActive).toBe(false);
+  it("ignores non-Escape keys", () => {
+    const transition = handleKeyDown(initialInputSession, "Enter");
+    expect(transition.event).toBeNull();
+    expect(transition.logType).toBe("key.ignored");
   });
 
   it("maps Escape to cancel", () => {
     expect(handleKeyDown(initialInputSession, "Escape").event).toEqual({ type: "cancel" });
   });
 
-  it("ignores pointer events when Alt is not active", () => {
-    const transition = handlePointerDown(initialInputSession, { x: 10, y: 20 });
-
-    expect(transition.event).toBeNull();
-    expect(transition.logType).toBe("pointer.down.ignored");
-  });
-
-  it("maps Alt pointer sequence to cursor events", () => {
-    const armed = handleKeyDown(initialInputSession, "Alt").session;
-    const down = handlePointerDown(armed, { x: 10, y: 20 });
+  it("maps pointer sequence to cursor events", () => {
+    const down = handlePointerDown(initialInputSession, { x: 10, y: 20 });
     const move = handlePointerMove(down.session, { x: 40, y: 60 });
     const up = handlePointerUp(move.session, { x: 80, y: 100 });
 
@@ -47,6 +34,13 @@ describe("input event mapping", () => {
     expect(isValidSelection({ x: 10, y: 10 }, { x: 15, y: 40 })).toBe(false);
     expect(isValidSelection({ x: 10, y: 10 }, { x: 40, y: 15 })).toBe(false);
     expect(isValidSelection({ x: 10, y: 10 }, { x: 18, y: 18 })).toBe(true);
+  });
+
+  it("ignores pointer up without prior pointer down", () => {
+    const up = handlePointerUp(initialInputSession, { x: 80, y: 100 });
+
+    expect(up.event).toBeNull();
+    expect(up.logType).toBe("pointer.up.ignored");
   });
 });
 

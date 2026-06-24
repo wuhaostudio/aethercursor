@@ -7,13 +7,11 @@ export interface PointerPosition {
 }
 
 export interface InputSession {
-  readonly altActive: boolean;
   readonly pointerDown: PointerPosition | null;
   readonly lastPointer: PointerPosition | null;
 }
 
 export const initialInputSession: InputSession = {
-  altActive: false,
   pointerDown: null,
   lastPointer: null
 };
@@ -24,7 +22,7 @@ export interface InputTransition {
   readonly logType: string;
 }
 
-export type InputKey = "Alt" | "Escape" | string;
+export type InputKey = "Escape" | string;
 
 export function handleKeyDown(session: InputSession, key: InputKey): InputTransition {
   if (key === "Escape") {
@@ -35,17 +33,6 @@ export function handleKeyDown(session: InputSession, key: InputKey): InputTransi
     };
   }
 
-  if (key === "Alt" && !session.altActive) {
-    return {
-      session: {
-        ...session,
-        altActive: true
-      },
-      event: { type: "activation.pressed" },
-      logType: "activation.pressed"
-    };
-  }
-
   return {
     session,
     event: null,
@@ -53,21 +40,9 @@ export function handleKeyDown(session: InputSession, key: InputKey): InputTransi
   };
 }
 
-export function handleKeyUp(session: InputSession, key: InputKey): InputTransition {
-  if (key === "Alt" && session.altActive) {
-    return {
-      session: {
-        ...session,
-        altActive: false,
-        pointerDown: null
-      },
-      event: { type: "activation.released" },
-      logType: "activation.released"
-    };
-  }
-
+export function handleKeyUp(_session: InputSession): InputTransition {
   return {
-    session,
+    session: _session,
     event: null,
     logType: "key.ignored"
   };
@@ -77,17 +52,6 @@ export function handlePointerDown(
   session: InputSession,
   position: PointerPosition
 ): InputTransition {
-  if (!session.altActive) {
-    return {
-      session: {
-        ...session,
-        lastPointer: position
-      },
-      event: null,
-      logType: "pointer.down.ignored"
-    };
-  }
-
   return {
     session: {
       ...session,
@@ -107,17 +71,6 @@ export function handlePointerMove(
   session: InputSession,
   position: PointerPosition
 ): InputTransition {
-  if (!session.altActive) {
-    return {
-      session: {
-        ...session,
-        lastPointer: position
-      },
-      event: null,
-      logType: "pointer.move.ignored"
-    };
-  }
-
   return {
     session: {
       ...session,
@@ -136,11 +89,10 @@ export function handlePointerUp(
   session: InputSession,
   position: PointerPosition
 ): InputTransition {
-  if (!session.altActive || !session.pointerDown) {
+  if (!session.pointerDown) {
     return {
       session: {
         ...session,
-        pointerDown: null,
         lastPointer: position
       },
       event: null,

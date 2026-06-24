@@ -1,8 +1,8 @@
 {
   "id": "agent.cloud.summarize",
-  "name": "Basic Summarization",
+  "name": "云端总结",
   "version": "0.1.0",
-  "description": "Summarizes selected text or OCR content.",
+  "description": "总结选中文字或OCR内容的要点。",
   "capabilities": ["summarize"],
   "input_types": ["text", "ocr_text", "screen_region", "image_region"],
   "output_types": ["markdown", "plain_text"],

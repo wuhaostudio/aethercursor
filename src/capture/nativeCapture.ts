@@ -9,6 +9,13 @@ export interface NativeCaptureArtifact {
   readonly height: number;
 }
 
+export interface ReadCaptureFileResult {
+  readonly context_id: string;
+  readonly data_base64: string;
+  readonly file_path: string;
+  readonly size_bytes: number;
+}
+
 export async function captureNativeRegion(context: ContextProtocol): Promise<NativeCaptureArtifact | null> {
   if (!isTauriRuntime()) {
     return null;
@@ -23,6 +30,35 @@ export async function captureNativeRegion(context: ContextProtocol): Promise<Nat
       height: Math.round(context.selection.bounds.height)
     }
   });
+}
+
+export async function readCaptureFile(contextId: string): Promise<ReadCaptureFileResult | null> {
+  if (!isTauriRuntime()) {
+    return null;
+  }
+
+  return invoke<ReadCaptureFileResult>("read_capture_file", {
+    request: {
+      context_id: contextId
+    }
+  });
+}
+
+export async function readCaptureFileAsBlob(contextId: string): Promise<Blob | null> {
+  const result = await readCaptureFile(contextId);
+
+  if (!result) {
+    return null;
+  }
+
+  const binary = atob(result.data_base64);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+
+  return new Blob([bytes], { type: "image/bmp" });
 }
 
 function isTauriRuntime(): boolean {

@@ -1,0 +1,18 @@
+{
+  "id": "agent.cloud.table-extract",
+  "name": "表格提取",
+  "version": "0.1.0",
+  "description": "从屏幕区域或图像中提取结构化表格数据。",
+  "capabilities": ["table_extraction", "extract_text"],
+  "input_types": ["screen_region", "image_region", "ocr_text"],
+  "output_types": ["key_value", "markdown", "plain_text"],
+  "execution_mode": "cloud",
+  "latency_level": "medium",
+  "cost_level": "medium",
+  "required_permissions": ["screen_region_read", "cloud_upload"],
+  "privacy_policy": {
+    "requires_upload": true,
+    "sensitive_data_allowed": false,
+    "user_confirmation": "first_time"
+  }
+}
