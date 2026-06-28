@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::{fs, path::PathBuf};
-use tauri::{AppHandle, Emitter};
+use std::{fs, path::PathBuf, thread, time::Duration};
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 const GLOBAL_SHORTCUT: &str = "Alt+Shift+S";
@@ -9,6 +9,9 @@ const GLOBAL_SHORTCUT: &str = "Alt+Shift+S";
 struct GlobalShortcutEvent {
     shortcut: String,
     state: String,
+    cursor_x: Option<f64>,
+    cursor_y: Option<f64>,
+    overlay_metrics: Option<OverlayWindowMetrics>,
 }
 
 #[tauri::command]
@@ -25,9 +28,21 @@ fn setup_global_shortcut(app: &AppHandle) -> Result<(), String> {
 
     app.global_shortcut()
         .on_shortcut(shortcut, move |_app, _shortcut, event| {
-            let state = match event.state {
-                ShortcutState::Pressed => "pressed",
-                ShortcutState::Released => "released",
+            let pressed = matches!(event.state, ShortcutState::Pressed);
+            let state = if pressed { "pressed" } else { "released" };
+
+            let cursor_position = if pressed {
+                app_handle.cursor_position().ok()
+            } else {
+                None
+            };
+            let (cursor_x, cursor_y) = cursor_position
+                .map(|position| (Some(position.x), Some(position.y)))
+                .unwrap_or((None, None));
+            let overlay_metrics = if pressed {
+                show_overlay_window_for_app(&app_handle, cursor_x, cursor_y).ok()
+            } else {
+                None
             };
 
             let _ = app_handle.emit(
@@ -35,6 +50,9 @@ fn setup_global_shortcut(app: &AppHandle) -> Result<(), String> {
                 GlobalShortcutEvent {
                     shortcut: GLOBAL_SHORTCUT.to_string(),
                     state: state.to_string(),
+                    cursor_x,
+                    cursor_y,
+                    overlay_metrics,
                 },
             );
         })
@@ -62,6 +80,132 @@ fn unregister_global_shortcut(app: AppHandle) -> Result<String, String> {
     Ok(format!("unregistered {}", GLOBAL_SHORTCUT))
 }
 
+#[derive(Debug, Serialize)]
+struct OverlayWindowStatus {
+    label: String,
+    visible: bool,
+    metrics: Option<OverlayWindowMetrics>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct OverlayWindowMetrics {
+    origin_x: i32,
+    origin_y: i32,
+    width: u32,
+    height: u32,
+    scale_factor: f64,
+}
+
+#[derive(Debug, Deserialize)]
+struct OverlayWindowMetricsRequest {
+    cursor_x: Option<f64>,
+    cursor_y: Option<f64>,
+}
+
+#[tauri::command]
+fn get_overlay_window_metrics(
+    app: AppHandle,
+    request: OverlayWindowMetricsRequest,
+) -> Result<OverlayWindowMetrics, String> {
+    overlay_metrics_for_app(&app, request.cursor_x, request.cursor_y)
+}
+
+#[tauri::command]
+fn show_overlay_window(app: AppHandle) -> Result<OverlayWindowStatus, String> {
+    let cursor_position = app.cursor_position().ok();
+    let (cursor_x, cursor_y) = cursor_position
+        .map(|position| (Some(position.x), Some(position.y)))
+        .unwrap_or((None, None));
+
+    show_overlay_window_for_app(&app, cursor_x, cursor_y).map(|metrics| OverlayWindowStatus {
+        label: "overlay".to_string(),
+        visible: true,
+        metrics: Some(metrics),
+    })
+}
+
+fn show_overlay_window_for_app(
+    app: &AppHandle,
+    cursor_x: Option<f64>,
+    cursor_y: Option<f64>,
+) -> Result<OverlayWindowMetrics, String> {
+    let overlay = app
+        .get_webview_window("overlay")
+        .ok_or_else(|| "overlay window was not found".to_string())?;
+
+    let metrics = overlay_metrics_for_app(app, cursor_x, cursor_y)?;
+
+    overlay
+        .set_position(PhysicalPosition::new(metrics.origin_x, metrics.origin_y))
+        .map_err(|error| format!("failed to position overlay window: {error}"))?;
+    overlay
+        .set_size(PhysicalSize::new(metrics.width, metrics.height))
+        .map_err(|error| format!("failed to size overlay window: {error}"))?;
+
+    overlay
+        .set_always_on_top(true)
+        .map_err(|error| format!("failed to raise overlay window: {error}"))?;
+    overlay
+        .set_ignore_cursor_events(false)
+        .map_err(|error| format!("failed to enable overlay pointer events: {error}"))?;
+    overlay
+        .show()
+        .map_err(|error| format!("failed to show overlay window: {error}"))?;
+    overlay
+        .set_focus()
+        .map_err(|error| format!("failed to focus overlay window: {error}"))?;
+
+    Ok(metrics)
+}
+
+#[tauri::command]
+fn hide_overlay_window(app: AppHandle) -> Result<OverlayWindowStatus, String> {
+    let overlay = app
+        .get_webview_window("overlay")
+        .ok_or_else(|| "overlay window was not found".to_string())?;
+
+    overlay
+        .set_ignore_cursor_events(true)
+        .map_err(|error| format!("failed to ignore overlay pointer events: {error}"))?;
+    overlay
+        .hide()
+        .map_err(|error| format!("failed to hide overlay window: {error}"))?;
+
+    Ok(OverlayWindowStatus {
+        label: "overlay".to_string(),
+        visible: false,
+        metrics: None,
+    })
+}
+
+fn overlay_metrics_for_app(
+    app: &AppHandle,
+    cursor_x: Option<f64>,
+    cursor_y: Option<f64>,
+) -> Result<OverlayWindowMetrics, String> {
+    let monitor = match (cursor_x, cursor_y) {
+        (Some(x), Some(y)) => app
+            .monitor_from_point(x, y)
+            .map_err(|error| format!("failed to read cursor monitor: {error}"))?,
+        _ => None,
+    }
+    .or_else(|| {
+        app.primary_monitor()
+            .map_err(|error| format!("failed to read primary monitor: {error}"))
+            .ok()
+            .flatten()
+    })
+    .ok_or_else(|| "monitor was not found".to_string())?;
+
+    Ok(OverlayWindowMetrics {
+        origin_x: monitor.position().x,
+        origin_y: monitor.position().y,
+        width: monitor.size().width,
+        height: monitor.size().height,
+        scale_factor: monitor.scale_factor(),
+    })
+}
+
 #[derive(Debug, Deserialize)]
 struct CaptureRegionRequest {
     context_id: String,
@@ -78,10 +222,14 @@ struct CaptureRegionResponse {
     file_path: String,
     width: i32,
     height: i32,
+    overlay_hidden: bool,
 }
 
 #[tauri::command]
-fn capture_region(request: CaptureRegionRequest) -> Result<CaptureRegionResponse, String> {
+fn capture_region(
+    app: AppHandle,
+    request: CaptureRegionRequest,
+) -> Result<CaptureRegionResponse, String> {
     if request.context_id.trim().is_empty() {
         return Err("context_id is required".to_string());
     }
@@ -91,8 +239,13 @@ fn capture_region(request: CaptureRegionRequest) -> Result<CaptureRegionResponse
     }
 
     let path = capture_path(&request.context_id)?;
+    let overlay_was_hidden = hide_overlay_for_capture(&app)?;
 
-    capture_region_to_file(&request, &path)?;
+    let capture_result = capture_region_to_file(&request, &path);
+    let restore_result = restore_overlay_after_capture(&app, overlay_was_hidden);
+
+    capture_result?;
+    restore_result?;
 
     Ok(CaptureRegionResponse {
         context_id: request.context_id,
@@ -103,7 +256,58 @@ fn capture_region(request: CaptureRegionRequest) -> Result<CaptureRegionResponse
         file_path: path.to_string_lossy().into_owned(),
         width: request.width,
         height: request.height,
+        overlay_hidden: overlay_was_hidden,
     })
+}
+
+fn hide_overlay_for_capture(app: &AppHandle) -> Result<bool, String> {
+    let Some(overlay) = app.get_webview_window("overlay") else {
+        return Ok(false);
+    };
+
+    let visible = overlay
+        .is_visible()
+        .map_err(|error| format!("failed to read overlay visibility: {error}"))?;
+
+    if !visible {
+        return Ok(false);
+    }
+
+    overlay
+        .set_ignore_cursor_events(true)
+        .map_err(|error| format!("failed to ignore overlay pointer events: {error}"))?;
+    overlay
+        .hide()
+        .map_err(|error| format!("failed to hide overlay before capture: {error}"))?;
+
+    thread::sleep(Duration::from_millis(80));
+
+    Ok(true)
+}
+
+fn restore_overlay_after_capture(app: &AppHandle, should_restore: bool) -> Result<(), String> {
+    if !should_restore {
+        return Ok(());
+    }
+
+    let overlay = app
+        .get_webview_window("overlay")
+        .ok_or_else(|| "overlay window was not found after capture".to_string())?;
+
+    overlay
+        .set_always_on_top(true)
+        .map_err(|error| format!("failed to restore overlay z-order: {error}"))?;
+    overlay
+        .set_ignore_cursor_events(false)
+        .map_err(|error| format!("failed to restore overlay pointer events: {error}"))?;
+    overlay
+        .show()
+        .map_err(|error| format!("failed to restore overlay after capture: {error}"))?;
+    overlay
+        .set_focus()
+        .map_err(|error| format!("failed to refocus overlay after capture: {error}"))?;
+
+    Ok(())
 }
 
 fn capture_path(context_id: &str) -> Result<PathBuf, String> {
@@ -210,13 +414,19 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_status,
             capture_region,
+            get_overlay_window_metrics,
+            hide_overlay_window,
             read_capture_file,
             register_global_shortcut,
+            show_overlay_window,
             unregister_global_shortcut
         ])
         .setup(|app| {
             if let Err(e) = setup_global_shortcut(app.handle()) {
                 eprintln!("global shortcut setup failed: {}", e);
+            }
+            if let Some(overlay) = app.get_webview_window("overlay") {
+                let _ = overlay.set_ignore_cursor_events(true);
             }
             Ok(())
         })

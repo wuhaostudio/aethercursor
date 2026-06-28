@@ -1,5 +1,6 @@
-import type { CursorState, CursorStatus, SelectionDraft } from "../cursor/stateMachine";
+import type { CursorState, CursorStatus, SelectionDraft, SelectionShapeMode } from "../cursor/stateMachine";
 import { createSelectionRegion } from "../selection/selectionGeometry";
+import type { SelectionPoint } from "../selection/selectionGeometry";
 
 export interface OverlaySelectionBox {
   readonly left: number;
@@ -13,6 +14,8 @@ export interface OverlayViewModel {
   readonly status: CursorStatus;
   readonly label: string;
   readonly selectionBox: OverlaySelectionBox | null;
+  readonly selectionMode: SelectionShapeMode | null;
+  readonly selectionPath: readonly SelectionPoint[];
   readonly showCursorRing: boolean;
   readonly showTargetHint: boolean;
   readonly showActivity: boolean;
@@ -21,6 +24,7 @@ export interface OverlayViewModel {
 const labels: Record<CursorStatus, string> = {
   normal: "",
   armed: "已激活",
+  smart_cursor: "智能光标",
   inspecting: "检测中",
   selecting: "选择中",
   resolving: "解析中",
@@ -38,8 +42,10 @@ export function createOverlayViewModel(state: CursorState): OverlayViewModel {
     visible,
     status: state.status,
     label: labels[state.status],
-    selectionBox: state.selection ? toSelectionBox(state.selection) : null,
-    showCursorRing: state.status === "armed" || state.status === "inspecting",
+    selectionBox: state.selection_shape ? toShapeSelectionBox(state.selection_shape) : state.selection ? toSelectionBox(state.selection) : null,
+    selectionMode: state.selection_shape?.mode ?? null,
+    selectionPath: state.selection_shape?.path ?? [],
+    showCursorRing: state.status === "armed" || state.status === "smart_cursor" || state.status === "inspecting",
     showTargetHint: state.status === "inspecting",
     showActivity: state.status === "resolving" || state.status === "thinking"
   };
@@ -56,4 +62,13 @@ export function toSelectionBox(selection: SelectionDraft): OverlaySelectionBox {
       y: selection.current_y
     }
   );
+}
+
+function toShapeSelectionBox(shape: NonNullable<CursorState["selection_shape"]>): OverlaySelectionBox {
+  return {
+    left: shape.bounds.x,
+    top: shape.bounds.y,
+    width: shape.bounds.width,
+    height: shape.bounds.height
+  };
 }

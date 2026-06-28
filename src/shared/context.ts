@@ -10,6 +10,7 @@ import {
   type ValidationIssue,
   type ValidationResult
 } from "./validation";
+import type { SelectionShapeMode, SelectionShapePoint } from "../cursor/stateMachine";
 
 export const contextTypes = [
   "text",
@@ -38,7 +39,11 @@ export interface ContextSelection {
   readonly type: ContextType;
   readonly bounds: SelectionBounds;
   readonly display_scale: number;
+  readonly shape?: SelectionShapeMode;
+  readonly path?: readonly SelectionShapePoint[];
 }
+
+const selectionShapeModes = ["focus", "rect", "lasso", "object_snap"] as const;
 
 export interface ContextContent {
   readonly selected_text: string | null;
@@ -126,6 +131,19 @@ function validateSelection(value: unknown, issues: ValidationIssue[]): void {
     "positive number"
   );
   validateBounds(value.bounds, issues);
+
+  if ("shape" in value) {
+    pushRequiredIssue(
+      issues,
+      selectionShapeModes.includes(value.shape as SelectionShapeMode),
+      "$.selection.shape",
+      "known selection shape"
+    );
+  }
+
+  if ("path" in value) {
+    validateSelectionPath(value.path, issues);
+  }
 }
 
 function validateBounds(value: unknown, issues: ValidationIssue[]): void {
@@ -148,6 +166,23 @@ function validateBounds(value: unknown, issues: ValidationIssue[]): void {
     "$.selection.bounds.height",
     "non-negative number"
   );
+}
+
+function validateSelectionPath(value: unknown, issues: ValidationIssue[]): void {
+  if (!Array.isArray(value)) {
+    issues.push({ path: "$.selection.path", message: "Expected array." });
+    return;
+  }
+
+  value.forEach((point, index) => {
+    if (!isRecord(point)) {
+      issues.push({ path: `$.selection.path[${index}]`, message: "Expected object." });
+      return;
+    }
+
+    pushRequiredIssue(issues, hasFiniteNumber(point, "x"), `$.selection.path[${index}].x`, "number");
+    pushRequiredIssue(issues, hasFiniteNumber(point, "y"), `$.selection.path[${index}].y`, "number");
+  });
 }
 
 function validateContent(value: unknown, issues: ValidationIssue[]): void {

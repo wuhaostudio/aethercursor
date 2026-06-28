@@ -1,9 +1,11 @@
 import type { SelectionDraft } from "../cursor/stateMachine";
+import type { SelectionShape } from "../cursor/stateMachine";
 import { createSelectionRegion } from "../selection/selectionGeometry";
 import type { ContextProtocol, ContextSource } from "../shared/context";
 
 export interface CaptureContextOptions {
   readonly selection: SelectionDraft;
+  readonly selectionShape?: SelectionShape;
   readonly source?: Partial<ContextSource>;
   readonly displayScale?: number;
   readonly selectedText?: string | null;
@@ -53,7 +55,13 @@ export function createContextFromSelection(options: CaptureContextOptions): Cont
         width: region.width,
         height: region.height
       },
-      display_scale: options.displayScale ?? getDefaultDisplayScale()
+      display_scale: options.displayScale ?? getDefaultDisplayScale(),
+      ...(options.selectionShape
+        ? {
+            shape: options.selectionShape.mode,
+            ...(options.selectionShape.path ? { path: options.selectionShape.path } : {})
+          }
+        : {})
     },
     content: {
       selected_text: options.selectedText ?? null,

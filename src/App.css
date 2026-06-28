@@ -9,6 +9,13 @@
   color: rgba(245, 248, 255, 0.96);
 }
 
+.app-shell--overlay-window {
+  display: block;
+  min-height: 100vh;
+  padding: 0;
+  background: transparent;
+}
+
 .debug-window {
   width: min(920px, 100%);
   border: 1px solid rgba(120, 220, 255, 0.42);
@@ -125,6 +132,54 @@ h1 {
   border-radius: 8px;
   padding: 16px;
   background: rgba(255, 255, 255, 0.035);
+}
+
+.capability-manager {
+  margin-top: 16px;
+  border: 1px solid rgba(120, 220, 255, 0.18);
+  border-radius: 8px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.capability-manager__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.capability-manager__item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  min-height: 58px;
+  border: 1px solid rgba(120, 220, 255, 0.14);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(12, 18, 28, 0.46);
+}
+
+.capability-manager__item input {
+  margin-top: 2px;
+}
+
+.capability-manager__item strong,
+.capability-manager__item small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.capability-manager__item strong {
+  color: rgba(245, 248, 255, 0.92);
+  font-size: 0.84rem;
+}
+
+.capability-manager__item small {
+  margin-top: 4px;
+  color: rgba(210, 220, 235, 0.62);
+  font-size: 0.74rem;
 }
 
 .context-debug__header {

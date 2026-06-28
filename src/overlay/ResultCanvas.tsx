@@ -1,8 +1,8 @@
-import type { CSSProperties } from "react";
 import type { AgentResult } from "../shared/result";
 import type { ContextProtocol } from "../shared/context";
 import type { OverlaySelectionBox } from "./overlayModel";
 import type { RoutedAgent } from "../agents/agentRegistry";
+import { positionFloatingNearSelection } from "./floatingPosition";
 
 interface ResultCanvasProps {
   readonly selectionBox: OverlaySelectionBox | null;
@@ -44,7 +44,11 @@ export function ResultCanvas({
   const explanation = getOutputText(result, "explanation");
 
   return (
-    <section className="result-canvas" style={positionCanvas(selectionBox)} aria-label="结果画布">
+    <section
+      className="result-canvas"
+      style={positionFloatingNearSelection(selectionBox, { width: 420, height: 520 })}
+      aria-label="结果画布"
+    >
       <header className="result-canvas__header">
         <span>{errorMessage || (result && result.status !== "success") ? "错误" : "结果画布"}</span>
         <div className="result-canvas__tools" aria-label="结果工具">
@@ -113,18 +117,4 @@ function getOutputText(result: AgentResult | null, key: string): string | null {
   const value = result?.output[key];
 
   return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function positionCanvas(selectionBox: OverlaySelectionBox | null): CSSProperties {
-  if (!selectionBox) {
-    return {
-      left: "24px",
-      top: "64px"
-    };
-  }
-
-  return {
-    left: `${selectionBox.left}px`,
-    top: `${selectionBox.top + selectionBox.height + 12}px`
-  };
 }

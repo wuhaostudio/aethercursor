@@ -1,8 +1,10 @@
 import type { Intent } from "../shared/agent";
+import { createLassoBounds, isLassoPathValid } from "../selection/lassoGeometry";
 
 export const cursorStatuses = [
   "normal",
   "armed",
+  "smart_cursor",
   "inspecting",
   "selecting",
   "resolving",
@@ -22,17 +24,40 @@ export interface SelectionDraft {
   readonly current_y: number;
 }
 
+export type SelectionShapeMode = "focus" | "rect" | "lasso" | "object_snap";
+
+export interface SelectionShapePoint {
+  readonly x: number;
+  readonly y: number;
+}
+
+export interface SelectionShape {
+  readonly mode: SelectionShapeMode;
+  readonly bounds: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  };
+  readonly path?: readonly SelectionShapePoint[];
+  readonly confidence?: number;
+}
+
 export interface CursorState {
   readonly status: CursorStatus;
   readonly selection?: SelectionDraft;
+  readonly selection_shape?: SelectionShape;
   readonly intent?: Intent;
   readonly agent_id?: string;
   readonly result_id?: string;
   readonly error?: string;
 }
 
+export const FOCUS_SELECTION_WIDTH = 20;
+export const FOCUS_SELECTION_HEIGHT = 15;
+
 export type CursorEvent =
-  | { readonly type: "activation.pressed" }
+  | { readonly type: "activation.pressed"; readonly x?: number; readonly y?: number }
   | { readonly type: "activation.released" }
   | { readonly type: "pointer.down"; readonly x: number; readonly y: number }
   | { readonly type: "pointer.move"; readonly x: number; readonly y: number }
@@ -40,6 +65,11 @@ export type CursorEvent =
   | { readonly type: "selection.drag.started"; readonly x: number; readonly y: number }
   | { readonly type: "selection.drag.updated"; readonly x: number; readonly y: number }
   | { readonly type: "selection.drag.completed"; readonly x: number; readonly y: number; readonly valid_selection: boolean }
+  | { readonly type: "selection.confirmed" }
+  | { readonly type: "selection.mode.next" }
+  | { readonly type: "selection.lasso.started"; readonly x: number; readonly y: number }
+  | { readonly type: "selection.lasso.updated"; readonly x: number; readonly y: number }
+  | { readonly type: "selection.lasso.completed"; readonly x: number; readonly y: number }
   | { readonly type: "context.resolved" }
   | { readonly type: "action.selected"; readonly intent: Intent; readonly agent_id?: string; readonly requires_confirmation: boolean }
   | { readonly type: "policy.blocked"; readonly message: string }
@@ -66,6 +96,8 @@ export function cursorReducer(state: CursorState, event: CursorEvent): CursorSta
       return reduceNormal(event);
     case "armed":
       return reduceArmed(event);
+    case "smart_cursor":
+      return reduceSmartCursor(state, event);
     case "inspecting":
       return reduceInspecting(state, event);
     case "selecting":
@@ -89,13 +121,17 @@ export function cursorReducer(state: CursorState, event: CursorEvent): CursorSta
 
 function reduceNormal(event: CursorEvent): CursorState {
   if (event.type === "activation.pressed") {
-    return { status: "armed" };
+    return createSmartCursorState(event.x ?? 0, event.y ?? 0);
   }
 
   return initialCursorState;
 }
 
 function reduceArmed(event: CursorEvent): CursorState {
+  if (event.type === "activation.pressed") {
+    return createSmartCursorState(event.x ?? 0, event.y ?? 0);
+  }
+
   if (event.type === "activation.released") {
     return initialCursorState;
   }
@@ -112,11 +148,57 @@ function reduceArmed(event: CursorEvent): CursorState {
         start_y: event.y,
         current_x: event.x,
         current_y: event.y
-      }
+      },
+      selection_shape: createRectSelectionShape(event.x, event.y, event.x, event.y)
     };
   }
 
   return { status: "armed" };
+}
+
+function reduceSmartCursor(state: CursorState, event: CursorEvent): CursorState {
+  if (event.type === "activation.released") {
+    return state;
+  }
+
+  if (event.type === "pointer.move") {
+    return createSmartCursorState(event.x, event.y);
+  }
+
+  if (event.type === "selection.mode.next") {
+    return cycleSmartCursorSelectionMode(state);
+  }
+
+  if (event.type === "selection.confirmed") {
+    return {
+      status: "resolving",
+      selection: state.selection,
+      selection_shape: state.selection_shape
+    };
+  }
+
+  if (event.type === "selection.lasso.started") {
+    return createLassoSelectionState(event.x, event.y);
+  }
+
+  if (event.type === "pointer.down" || event.type === "selection.drag.started") {
+    if (state.selection_shape?.mode === "lasso") {
+      return createLassoSelectionState(event.x, event.y);
+    }
+
+    return {
+      status: "selecting",
+      selection: {
+        start_x: event.x,
+        start_y: event.y,
+        current_x: event.x,
+        current_y: event.y
+      },
+      selection_shape: createRectSelectionShape(event.x, event.y, event.x, event.y)
+    };
+  }
+
+  return state;
 }
 
 function reduceInspecting(state: CursorState, event: CursorEvent): CursorState {
@@ -132,7 +214,8 @@ function reduceInspecting(state: CursorState, event: CursorEvent): CursorState {
         start_y: event.y,
         current_x: event.x,
         current_y: event.y
-      }
+      },
+      selection_shape: createRectSelectionShape(event.x, event.y, event.x, event.y)
     };
   }
 
@@ -148,21 +231,65 @@ function reduceSelecting(state: CursorState, event: CursorEvent): CursorState {
     return initialCursorState;
   }
 
-  if (event.type === "pointer.move" || event.type === "selection.drag.updated") {
-    return {
-      ...state,
-      selection: updateSelection(state.selection, event.x, event.y)
-    };
+  if (event.type === "selection.lasso.updated") {
+    return updateLassoSelectionState(state, event.x, event.y);
   }
 
-  if (event.type === "pointer.up" || event.type === "selection.drag.completed") {
-    if (!event.valid_selection) {
-      return { status: "armed" };
+  if (event.type === "selection.lasso.completed") {
+    const nextState = updateLassoSelectionState(state, event.x, event.y);
+    const path = nextState.selection_shape?.path ?? [];
+
+    if (!isLassoPathValid(path)) {
+      return createSmartCursorState(event.x, event.y);
     }
 
     return {
       status: "resolving",
-      selection: updateSelection(state.selection, event.x, event.y)
+      selection: nextState.selection,
+      selection_shape: nextState.selection_shape
+    };
+  }
+
+  if (event.type === "pointer.move" || event.type === "selection.drag.updated") {
+    if (state.selection_shape?.mode === "lasso") {
+      return updateLassoSelectionState(state, event.x, event.y);
+    }
+
+    const selection = updateSelection(state.selection, event.x, event.y);
+
+    return {
+      ...state,
+      selection,
+      selection_shape: createShapeFromSelection(selection)
+    };
+  }
+
+  if (event.type === "pointer.up" || event.type === "selection.drag.completed") {
+    if (state.selection_shape?.mode === "lasso") {
+      const nextState = updateLassoSelectionState(state, event.x, event.y);
+      const path = nextState.selection_shape?.path ?? [];
+
+      if (!isLassoPathValid(path)) {
+        return createSmartCursorState(event.x, event.y);
+      }
+
+      return {
+        status: "resolving",
+        selection: nextState.selection,
+        selection_shape: nextState.selection_shape
+      };
+    }
+
+    if (!event.valid_selection) {
+      return { status: "armed" };
+    }
+
+    const selection = updateSelection(state.selection, event.x, event.y);
+
+    return {
+      status: "resolving",
+      selection,
+      selection_shape: createShapeFromSelection(selection)
     };
   }
 
@@ -173,13 +300,16 @@ function reduceResolving(state: CursorState, event: CursorEvent): CursorState {
   if (event.type === "context.resolved") {
     return {
       status: "action_pending",
-      selection: state.selection
+      selection: state.selection,
+      selection_shape: state.selection_shape
     };
   }
 
   if (event.type === "agent.failed") {
     return {
       status: "error",
+      selection: state.selection,
+      selection_shape: state.selection_shape,
       error: event.message
     };
   }
@@ -191,6 +321,7 @@ function reduceActionPending(state: CursorState, event: CursorEvent): CursorStat
   if (event.type === "action.selected") {
     const nextState = {
       selection: state.selection,
+      selection_shape: state.selection_shape,
       intent: event.intent,
       agent_id: event.agent_id
     };
@@ -212,6 +343,7 @@ function reduceActionPending(state: CursorState, event: CursorEvent): CursorStat
     return {
       status: "error",
       selection: state.selection,
+      selection_shape: state.selection_shape,
       error: event.message
     };
   }
@@ -234,7 +366,8 @@ function reduceConfirming(state: CursorState, event: CursorEvent): CursorState {
   if (event.type === "permission.denied") {
     return {
       status: "action_pending",
-      selection: state.selection
+      selection: state.selection,
+      selection_shape: state.selection_shape
     };
   }
 
@@ -269,7 +402,8 @@ function reduceResult(state: CursorState, event: CursorEvent): CursorState {
   if (event.type === "agent.switch_requested") {
     return {
       status: "action_pending",
-      selection: state.selection
+      selection: state.selection,
+      selection_shape: state.selection_shape
     };
   }
 
@@ -298,5 +432,125 @@ function updateSelection(selection: SelectionDraft | undefined, x: number, y: nu
     ...selection,
     current_x: x,
     current_y: y
+  };
+}
+
+function createSmartCursorState(x: number, y: number): CursorState {
+  const left = x - FOCUS_SELECTION_WIDTH / 2;
+  const top = y - FOCUS_SELECTION_HEIGHT / 2;
+
+  return {
+    status: "smart_cursor",
+    selection: {
+      start_x: left,
+      start_y: top,
+      current_x: left + FOCUS_SELECTION_WIDTH,
+      current_y: top + FOCUS_SELECTION_HEIGHT
+    },
+    selection_shape: {
+      mode: "focus",
+      bounds: {
+        x: left,
+        y: top,
+        width: FOCUS_SELECTION_WIDTH,
+        height: FOCUS_SELECTION_HEIGHT
+      },
+      confidence: 0.5
+    }
+  };
+}
+
+function createRectSelectionShape(startX: number, startY: number, currentX: number, currentY: number): SelectionShape {
+  return {
+    mode: "rect",
+    bounds: {
+      x: Math.min(startX, currentX),
+      y: Math.min(startY, currentY),
+      width: Math.abs(currentX - startX),
+      height: Math.abs(currentY - startY)
+    },
+    confidence: 1
+  };
+}
+
+function createShapeFromSelection(selection: SelectionDraft): SelectionShape {
+  return createRectSelectionShape(selection.start_x, selection.start_y, selection.current_x, selection.current_y);
+}
+
+function cycleSmartCursorSelectionMode(state: CursorState): CursorState {
+  const currentMode = state.selection_shape?.mode ?? "focus";
+
+  if (currentMode === "focus") {
+    return createModePreviewState(state, "lasso");
+  }
+
+  if (currentMode === "lasso") {
+    return createModePreviewState(state, "rect");
+  }
+
+  return createModePreviewState(state, "focus");
+}
+
+function createModePreviewState(state: CursorState, mode: SelectionShapeMode): CursorState {
+  if (!state.selection || !state.selection_shape) {
+    return state;
+  }
+
+  return {
+    ...state,
+    selection_shape: {
+      ...state.selection_shape,
+      mode,
+      path: mode === "lasso" ? state.selection_shape.path : undefined,
+      confidence: mode === "focus" ? 0.5 : 1
+    }
+  };
+}
+
+function createLassoSelectionState(x: number, y: number): CursorState {
+  const path = [{ x, y }];
+
+  return {
+    status: "selecting",
+    selection: {
+      start_x: x,
+      start_y: y,
+      current_x: x,
+      current_y: y
+    },
+    selection_shape: createLassoSelectionShape(path)
+  };
+}
+
+function updateLassoSelectionState(state: CursorState, x: number, y: number): CursorState {
+  const existingPath = state.selection_shape?.mode === "lasso" ? state.selection_shape.path ?? [] : [];
+  const path = [...existingPath, { x, y }];
+  const shape = createLassoSelectionShape(path);
+
+  return {
+    ...state,
+    selection: {
+      start_x: shape.bounds.x,
+      start_y: shape.bounds.y,
+      current_x: shape.bounds.x + shape.bounds.width,
+      current_y: shape.bounds.y + shape.bounds.height
+    },
+    selection_shape: shape
+  };
+}
+
+function createLassoSelectionShape(path: readonly SelectionShapePoint[]): SelectionShape {
+  const bounds = createLassoBounds(path);
+
+  return {
+    mode: "lasso",
+    bounds: {
+      x: bounds.left,
+      y: bounds.top,
+      width: bounds.width,
+      height: bounds.height
+    },
+    path,
+    confidence: 1
   };
 }

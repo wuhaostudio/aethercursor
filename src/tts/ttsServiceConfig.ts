@@ -16,13 +16,34 @@ const defaultConfig: TtsServiceConfig = {
   enabled: false
 };
 
-let currentConfig: TtsServiceConfig = { ...defaultConfig };
+let runtimeConfig: TtsServiceConfig | null = null;
 
 export function getTtsServiceConfig(): TtsServiceConfig {
-  return { ...currentConfig };
+  if (runtimeConfig) {
+    return { ...runtimeConfig };
+  }
+
+  const globals = globalThis as unknown as {
+    __AETHERCURSOR_TTS_ENDPOINT?: string;
+    __AETHERCURSOR_TTS_API_KEY?: string;
+    __AETHERCURSOR_TTS_VOICE?: string;
+    __AETHERCURSOR_TTS_RATE?: number;
+    __AETHERCURSOR_TTS_PITCH?: number;
+  };
+  const apiKey = globals.__AETHERCURSOR_TTS_API_KEY?.trim() ?? defaultConfig.api_key;
+
+  return {
+    endpoint: globals.__AETHERCURSOR_TTS_ENDPOINT?.trim() ?? defaultConfig.endpoint,
+    api_key: apiKey,
+    voice: globals.__AETHERCURSOR_TTS_VOICE?.trim() ?? defaultConfig.voice,
+    rate: globals.__AETHERCURSOR_TTS_RATE ?? defaultConfig.rate,
+    pitch: globals.__AETHERCURSOR_TTS_PITCH ?? defaultConfig.pitch,
+    enabled: apiKey.length > 0
+  };
 }
 
 export function setTtsServiceConfig(partial: Partial<TtsServiceConfig>): TtsServiceConfig {
+  const currentConfig = getTtsServiceConfig();
   const endpoint = partial.endpoint !== undefined ? partial.endpoint.trim() : currentConfig.endpoint;
   const apiKey = partial.api_key !== undefined ? partial.api_key.trim() : currentConfig.api_key;
   const voice = partial.voice !== undefined ? partial.voice.trim() : currentConfig.voice;
@@ -30,7 +51,7 @@ export function setTtsServiceConfig(partial: Partial<TtsServiceConfig>): TtsServ
   const pitch = partial.pitch !== undefined ? partial.pitch : currentConfig.pitch;
   const enabled = apiKey.length > 0;
 
-  currentConfig = {
+  runtimeConfig = {
     endpoint,
     api_key: apiKey,
     voice,
@@ -39,10 +60,11 @@ export function setTtsServiceConfig(partial: Partial<TtsServiceConfig>): TtsServ
     enabled
   };
 
-  return { ...currentConfig };
+  return { ...runtimeConfig };
 }
 
 export function isCloudTtsAvailable(): boolean {
+  const currentConfig = getTtsServiceConfig();
   return currentConfig.enabled && currentConfig.endpoint.length > 0 && currentConfig.api_key.length > 0;
 }
 
@@ -51,5 +73,5 @@ export function isWebSpeechAvailable(): boolean {
 }
 
 export function resetTtsServiceConfig(): void {
-  currentConfig = { ...defaultConfig };
+  runtimeConfig = null;
 }

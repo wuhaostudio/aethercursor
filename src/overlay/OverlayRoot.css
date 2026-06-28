@@ -94,6 +94,14 @@
   padding: 0 9px;
 }
 
+.action-menu__empty {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  color: var(--overlay-muted-text);
+  font-size: 0.75rem;
+}
+
 .action-menu button:hover,
 .result-canvas button:hover,
 .permission-prompt button:hover {

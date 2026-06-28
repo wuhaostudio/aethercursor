@@ -62,6 +62,25 @@
         "display_scale": {
           "type": "number",
           "exclusiveMinimum": 0
+        },
+        "shape": {
+          "enum": ["focus", "rect", "lasso", "object_snap"]
+        },
+        "path": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["x", "y"],
+            "properties": {
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              }
+            }
+          }
         }
       }
     },

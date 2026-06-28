@@ -1,6 +1,6 @@
-import type { CSSProperties } from "react";
 import type { RoutedAgent } from "../agents/agentRegistry";
 import type { OverlaySelectionBox } from "./overlayModel";
+import { positionFloatingNearSelection } from "./floatingPosition";
 
 interface PermissionPromptProps {
   readonly selectionBox: OverlaySelectionBox | null;
@@ -11,7 +11,11 @@ interface PermissionPromptProps {
 
 export function PermissionPrompt({ selectionBox, action, onConfirm, onCancel }: PermissionPromptProps) {
   return (
-    <section className="permission-prompt" style={positionPrompt(selectionBox)} aria-label="权限提示">
+    <section
+      className="permission-prompt"
+      style={positionFloatingNearSelection(selectionBox, { width: 340, height: 180 })}
+      aria-label="权限提示"
+    >
       <header>
         <span>云端权限</span>
         <small>级别 {action.policy_decision.privacy_level}</small>
@@ -28,20 +32,6 @@ export function PermissionPrompt({ selectionBox, action, onConfirm, onCancel }: 
       </div>
     </section>
   );
-}
-
-function positionPrompt(selectionBox: OverlaySelectionBox | null): CSSProperties {
-  if (!selectionBox) {
-    return {
-      left: "24px",
-      top: "64px"
-    };
-  }
-
-  return {
-    left: `${selectionBox.left}px`,
-    top: `${selectionBox.top + selectionBox.height + 12}px`
-  };
 }
 
 function formatIntent(intent: string): string {

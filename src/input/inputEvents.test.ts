@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   handleKeyDown,
+  handleKeyUp,
   handlePointerDown,
   handlePointerMove,
   handlePointerUp,
@@ -10,14 +11,36 @@ import {
 import { appendInputDebugLog, INPUT_LOG_LIMIT } from "./inputDebugLog";
 
 describe("input event mapping", () => {
-  it("ignores non-Escape keys", () => {
-    const transition = handleKeyDown(initialInputSession, "Enter");
+  it("ignores non-control keys", () => {
+    const transition = handleKeyDown(initialInputSession, "Space");
     expect(transition.event).toBeNull();
     expect(transition.logType).toBe("key.ignored");
   });
 
   it("maps Escape to cancel", () => {
     expect(handleKeyDown(initialInputSession, "Escape").event).toEqual({ type: "cancel" });
+  });
+
+  it("maps Alt press and release to activation events", () => {
+    expect(handleKeyDown(initialInputSession, "Alt").event).toMatchObject({ type: "activation.pressed" });
+    expect(handleKeyUp(initialInputSession, "Alt").event).toEqual({ type: "activation.released" });
+  });
+
+  it("uses the latest pointer position for Alt activation", () => {
+    const moved = handlePointerMove(initialInputSession, { x: 32, y: 48 });
+    expect(handleKeyDown(moved.session, "Alt").event).toEqual({
+      type: "activation.pressed",
+      x: 32,
+      y: 48
+    });
+  });
+
+  it("maps Enter to selection confirmation", () => {
+    expect(handleKeyDown(initialInputSession, "Enter").event).toEqual({ type: "selection.confirmed" });
+  });
+
+  it("maps Tab to selection mode switching", () => {
+    expect(handleKeyDown(initialInputSession, "Tab").event).toEqual({ type: "selection.mode.next" });
   });
 
   it("maps pointer sequence to cursor events", () => {

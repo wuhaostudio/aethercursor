@@ -82,6 +82,36 @@ describe("context capture", () => {
     expect(context.metadata.confidence).toBe(0.72);
   });
 
+  it("records selection shape details when provided", () => {
+    const context = createContextFromSelection({
+      selection,
+      selectionShape: {
+        mode: "lasso",
+        bounds: {
+          x: 120,
+          y: 300,
+          width: 520,
+          height: 240
+        },
+        path: [
+          { x: 120, y: 300 },
+          { x: 640, y: 540 },
+          { x: 120, y: 540 }
+        ],
+        confidence: 1
+      },
+      createContextId: () => "ctx_lasso"
+    });
+
+    expect(context.selection.shape).toBe("lasso");
+    expect(context.selection.path).toEqual([
+      { x: 120, y: 300 },
+      { x: 640, y: 540 },
+      { x: 120, y: 540 }
+    ]);
+    expect(validateContextProtocol(context)).toEqual({ valid: true, issues: [] });
+  });
+
   it("creates cleanup requests for local image refs", () => {
     const context = createContextFromSelection({
       selection,

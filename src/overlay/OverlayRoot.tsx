@@ -71,7 +71,12 @@ export function OverlayRoot({
       <div className="overlay-mode-pill">{model.label}</div>
       {model.showTargetHint ? <div className="overlay-target-hint">Text</div> : null}
       {model.selectionBox ? (
-        <SelectionLayer region={model.selectionBox} active={model.showActivity} />
+        <SelectionLayer
+          region={model.selectionBox}
+          active={model.showActivity}
+          mode={model.selectionMode}
+          path={model.selectionPath}
+        />
       ) : null}
       {state.status === "action_pending" && model.selectionBox && onActionSelect ? (
         <ActionMenu selectionBox={model.selectionBox} actions={actions} onSelect={onActionSelect} />

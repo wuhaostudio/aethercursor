@@ -33,6 +33,34 @@ export function handleKeyDown(session: InputSession, key: InputKey): InputTransi
     };
   }
 
+  if (key === "Alt") {
+    return {
+      session,
+      event: {
+        type: "activation.pressed",
+        x: session.lastPointer?.x,
+        y: session.lastPointer?.y
+      },
+      logType: "key.alt.down"
+    };
+  }
+
+  if (key === "Enter") {
+    return {
+      session,
+      event: { type: "selection.confirmed" },
+      logType: "key.enter"
+    };
+  }
+
+  if (key === "Tab") {
+    return {
+      session,
+      event: { type: "selection.mode.next" },
+      logType: "key.tab"
+    };
+  }
+
   return {
     session,
     event: null,
@@ -40,9 +68,17 @@ export function handleKeyDown(session: InputSession, key: InputKey): InputTransi
   };
 }
 
-export function handleKeyUp(_session: InputSession): InputTransition {
+export function handleKeyUp(session: InputSession, key: InputKey): InputTransition {
+  if (key === "Alt") {
+    return {
+      session,
+      event: { type: "activation.released" },
+      logType: "key.alt.up"
+    };
+  }
+
   return {
-    session: _session,
+    session,
     event: null,
     logType: "key.ignored"
   };

@@ -29,6 +29,26 @@ describe("ContextProtocol validation", () => {
       ]
     });
   });
+
+  it("rejects invalid selection shape path points", () => {
+    const invalid = {
+      ...sampleContext,
+      selection: {
+        ...sampleContext.selection,
+        shape: "lasso",
+        path: [{ x: 10 }]
+      }
+    };
+
+    expect(validateContextProtocol(invalid)).toMatchObject({
+      valid: false,
+      issues: [
+        {
+          path: "$.selection.path[0].y"
+        }
+      ]
+    });
+  });
 });
 
 describe("AgentManifest validation", () => {

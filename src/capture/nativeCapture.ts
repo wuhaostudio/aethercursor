@@ -7,6 +7,7 @@ export interface NativeCaptureArtifact {
   readonly file_path: string;
   readonly width: number;
   readonly height: number;
+  readonly overlay_hidden?: boolean;
 }
 
 export interface ReadCaptureFileResult {
@@ -61,6 +62,6 @@ export async function readCaptureFileAsBlob(contextId: string): Promise<Blob | n
   return new Blob([bytes], { type: "image/bmp" });
 }
 
-function isTauriRuntime(): boolean {
+export function isTauriRuntime(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }

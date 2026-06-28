@@ -1,6 +1,6 @@
-import type { CSSProperties } from "react";
 import type { RoutedAgent } from "../agents/agentRegistry";
 import type { OverlaySelectionBox } from "./overlayModel";
+import { positionFloatingNearSelection } from "./floatingPosition";
 
 interface ActionMenuProps {
   readonly selectionBox: OverlaySelectionBox;
@@ -10,27 +10,28 @@ interface ActionMenuProps {
 
 export function ActionMenu({ selectionBox, actions, onSelect }: ActionMenuProps) {
   return (
-    <div className="action-menu" style={positionMenu(selectionBox)} aria-label="Action menu">
-      {actions.map((action) => (
-        <button
-          key={`${action.intent}:${action.manifest.id}`}
-          type="button"
-          title={action.manifest.name}
-          onClick={() => onSelect(action)}
-        >
-          {formatIntent(action.intent)}
-          {formatPolicyStatus(action)}
-        </button>
-      ))}
+    <div
+      className="action-menu"
+      style={positionFloatingNearSelection(selectionBox, { width: 360, height: 52 })}
+      aria-label="Action menu"
+    >
+      {actions.length > 0 ? (
+        actions.map((action) => (
+          <button
+            key={`${action.intent}:${action.manifest.id}`}
+            type="button"
+            title={action.manifest.name}
+            onClick={() => onSelect(action)}
+          >
+            {formatIntent(action.intent)}
+            {formatPolicyStatus(action)}
+          </button>
+        ))
+      ) : (
+        <span className="action-menu__empty">未启用可用能力</span>
+      )}
     </div>
   );
-}
-
-function positionMenu(selectionBox: OverlaySelectionBox): CSSProperties {
-  return {
-    left: `${selectionBox.left}px`,
-    top: `${selectionBox.top + selectionBox.height + 10}px`
-  };
 }
 
 function formatIntent(intent: string): string {

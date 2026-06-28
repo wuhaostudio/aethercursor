@@ -1,9 +1,10 @@
 # AetherCursor
 
-AetherCursor is a desktop smart cursor framework prototype. Phase 1 focuses on the explicit interaction loop:
+AetherCursor is a desktop smart cursor framework prototype. The current flow focuses on an explicit smart cursor loop:
 
 ```text
-activate -> select region -> capture local context -> choose intent -> apply policy -> route agent -> render result
+Alt+Shift+S -> smart cursor overlay -> select focus/rect/lasso context
+  -> choose enabled capability -> apply policy -> route runtime -> render spatial result
 ```
 
 ## Development

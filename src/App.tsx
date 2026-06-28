@@ -1,18 +1,36 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import "./App.css";
+import { listen } from "@tauri-apps/api/event";
 import {
   getAvailableAgentActions,
   loadBuiltInAgentManifests,
   type RoutedAgent
 } from "./agents/agentRegistry";
 import { createContextFromSelection } from "./capture/contextCapture";
-import { captureNativeRegion } from "./capture/nativeCapture";
+import { captureNativeRegion, isTauriRuntime } from "./capture/nativeCapture";
+import {
+  createCapabilitySettings,
+  filterEnabledManifests,
+  loadEnabledCapabilityIds,
+  saveEnabledCapabilityIds,
+  toggleCapabilityId
+} from "./capabilities/capabilitySettings";
+import { toDesktopSelectionCoordinates, toOverlayLogicalPoint } from "./desktop/desktopCoordinates";
+import {
+  getDesktopOverlayMetrics,
+  getDesktopWindowRole,
+  hideDesktopOverlay,
+  type OverlayWindowMetrics
+} from "./desktop/desktopOverlay";
+import { shouldResetOverlaySession } from "./desktop/overlaySession";
 import { OverlayRoot } from "./overlay/OverlayRoot";
 import { confirmCloudUpload } from "./policy/policy";
 import { executeAgentRuntime } from "./runtime/agentRuntime";
 import { cursorReducer, initialCursorState, type CursorEvent, type CursorState } from "./cursor/stateMachine";
 import {
   handlePointerDown,
+  handleKeyDown,
+  handleKeyUp,
   handlePointerMove,
   handlePointerUp,
   initialInputSession,
@@ -20,6 +38,7 @@ import {
   type InputTransition
 } from "./input/inputEvents";
 import { appendInputDebugLog, formatPointerDetail, type InputDebugEntry } from "./input/inputDebugLog";
+import { isInteractivePointerTarget } from "./input/pointerTargets";
 import { ttsPlayer, type TtsPlaybackState } from "./tts/ttsPlayer";
 import type { ContextProtocol } from "./shared/context";
 import { phaseZeroModules } from "./shared/project";
@@ -27,9 +46,35 @@ import type { AgentResult } from "./shared/result";
 
 const builtInAgentRegistry = loadBuiltInAgentManifests();
 
+interface GlobalShortcutEventPayload {
+  readonly shortcut: string;
+  readonly state: "pressed" | "released";
+  readonly cursor_x?: number;
+  readonly cursor_y?: number;
+  readonly overlay_metrics?: OverlayWindowMetrics | null;
+}
+
 const overlayPreviewStates: readonly CursorState[] = [
   { status: "normal" },
-  { status: "armed" },
+  {
+    status: "smart_cursor",
+    selection: {
+      start_x: 110,
+      start_y: 72.5,
+      current_x: 130,
+      current_y: 87.5
+    },
+    selection_shape: {
+      mode: "focus",
+      bounds: {
+        x: 110,
+        y: 72.5,
+        width: 20,
+        height: 15
+      },
+      confidence: 0.5
+    }
+  },
   {
     status: "selecting",
     selection: {
@@ -63,16 +108,28 @@ function App() {
   const [latestResult, setLatestResult] = useState<AgentResult | null>(null);
   const [pinnedResults, setPinnedResults] = useState<readonly AgentResult[]>([]);
   const [nativeCapturePath, setNativeCapturePath] = useState<string | null>(null);
+  const [nativeCapturePending, setNativeCapturePending] = useState(false);
   const [moreAgentsOpen, setMoreAgentsOpen] = useState(false);
+  const [capabilityManagerOpen, setCapabilityManagerOpen] = useState(false);
+  const [overlayMetrics, setOverlayMetrics] = useState<OverlayWindowMetrics | null>(null);
+  const [windowRole] = useState(() => getDesktopWindowRole());
+  const [enabledCapabilityIds, setEnabledCapabilityIds] = useState<readonly string[]>(() => loadEnabledCapabilityIds());
   const [pendingAction, setPendingAction] = useState<RoutedAgent | null>(null);
   const [ttsState, setTtsState] = useState<TtsPlaybackState>({
     isPlaying: false,
     isPaused: false,
     currentText: null
   });
-  const availableActions = latestContext
-    ? getAvailableAgentActions(builtInAgentRegistry.manifests, latestContext)
-    : [];
+  const enabledManifests = useMemo(
+    () => filterEnabledManifests(builtInAgentRegistry.manifests, enabledCapabilityIds),
+    [enabledCapabilityIds]
+  );
+  const capabilitySettings = useMemo(
+    () => createCapabilitySettings(builtInAgentRegistry.manifests, enabledCapabilityIds),
+    [enabledCapabilityIds]
+  );
+  const availableActions = latestContext ? getAvailableAgentActions(enabledManifests, latestContext) : [];
+  const isOverlayWindow = windowRole === "overlay";
 
   const moreAgents = latestResult && latestContext
     ? availableActions.filter(
@@ -247,20 +304,188 @@ function App() {
     dispatchCursorEvent({ type: "result.closed" });
   }, []);
 
+  const handleToggleCapability = useCallback((id: string) => {
+    setEnabledCapabilityIds((currentIds) => {
+      const nextIds = saveEnabledCapabilityIds(toggleCapabilityId(currentIds, id));
+
+      setInputLog((entries) =>
+        appendInputDebugLog(entries, {
+          type: "capability.toggle",
+          detail: id
+        })
+      );
+
+      return nextIds;
+    });
+  }, []);
+
   useEffect(() => {
     const handleWindowKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        dispatchCursorEvent({ type: "cancel" });
+      if (event.key !== "Escape" && event.key !== "Alt" && event.key !== "Enter" && event.key !== "Tab") {
+        return;
       }
+
+      if (event.repeat) {
+        return;
+      }
+
+      if (event.key === "Escape" || event.key === "Alt" || event.key === "Enter" || event.key === "Tab") {
+        event.preventDefault();
+      }
+
+      commitTransition(handleKeyDown(inputSessionRef.current, event.key), event.key);
+    };
+
+    const handleWindowKeyUp = (event: KeyboardEvent) => {
+      if (event.key !== "Alt") {
+        return;
+      }
+
+      event.preventDefault();
+      commitTransition(handleKeyUp(inputSessionRef.current, event.key), event.key);
     };
 
     window.addEventListener("keydown", handleWindowKeyDown);
+    window.addEventListener("keyup", handleWindowKeyUp);
 
     return () => {
       window.removeEventListener("keydown", handleWindowKeyDown);
+      window.removeEventListener("keyup", handleWindowKeyUp);
     };
-  }, [dispatchCursorEvent]);
+  }, [commitTransition]);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+
+    let disposed = false;
+    let cleanup: (() => void) | null = null;
+
+    void listen<GlobalShortcutEventPayload>("global-shortcut", (event) => {
+      if (event.payload.shortcut !== "Alt+Shift+S") {
+        return;
+      }
+
+      setInputLog((entries) =>
+        appendInputDebugLog(entries, {
+          type: `shortcut.${event.payload.state}`,
+          detail: event.payload.shortcut
+        })
+      );
+
+      if (event.payload.state === "pressed") {
+        if (windowRole !== "overlay") {
+          return;
+        }
+
+        const activeOverlayMetrics = event.payload.overlay_metrics ?? overlayMetrics;
+
+        if (event.payload.overlay_metrics) {
+          setOverlayMetrics(event.payload.overlay_metrics);
+        }
+
+        const shortcutPoint =
+          typeof event.payload.cursor_x === "number" && typeof event.payload.cursor_y === "number"
+            ? toOverlayLogicalPoint(event.payload.cursor_x, event.payload.cursor_y, activeOverlayMetrics)
+            : inputSessionRef.current.lastPointer;
+
+        dispatchCursorEvent({
+          type: "activation.pressed",
+          x: shortcutPoint?.x,
+          y: shortcutPoint?.y
+        });
+      }
+    }).then((unlisten) => {
+      if (disposed) {
+        unlisten();
+        return;
+      }
+
+      cleanup = unlisten;
+    });
+
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
+  }, [overlayMetrics, windowRole]);
+
+  useEffect(() => {
+    if (windowRole === "browser") {
+      return;
+    }
+
+    void getDesktopOverlayMetrics()
+      .then((metrics) => {
+        setOverlayMetrics(metrics);
+      })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+
+        setInputLog((entries) =>
+          appendInputDebugLog(entries, {
+            type: "overlay.metrics.failed",
+            detail: message
+          })
+        );
+      });
+  }, [windowRole]);
+
+  useEffect(() => {
+    if (
+      !shouldResetOverlaySession(cursorState.status, {
+        hasContext: latestContext !== null,
+        hasResult: latestResult !== null,
+        hasPendingAction: pendingAction !== null,
+        moreAgentsOpen,
+        nativeCapturePath,
+        nativeCapturePending
+      })
+    ) {
+      return;
+    }
+
+    setLatestContext(null);
+    setLatestResult(null);
+    setPendingAction(null);
+    setMoreAgentsOpen(false);
+    setNativeCapturePath(null);
+    setNativeCapturePending(false);
+    lastResolvedSelectionKeyRef.current = null;
+    lastRuntimeKeyRef.current = null;
+  }, [
+    cursorState.status,
+    latestContext,
+    latestResult,
+    moreAgentsOpen,
+    nativeCapturePath,
+    nativeCapturePending,
+    pendingAction
+  ]);
+
+  useEffect(() => {
+    if (windowRole !== "overlay") {
+      return;
+    }
+
+    const shouldHide = cursorState.status === "normal";
+
+    if (!shouldHide) {
+      return;
+    }
+
+    void hideDesktopOverlay().catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+
+      setInputLog((entries) =>
+        appendInputDebugLog(entries, {
+          type: "overlay.hide.failed",
+          detail: message
+        })
+      );
+    });
+  }, [cursorState.status, windowRole]);
 
   useEffect(() => {
     const unsubscribe = ttsPlayer.subscribe((state) => {
@@ -289,8 +514,16 @@ function App() {
 
     lastResolvedSelectionKeyRef.current = selectionKey;
 
+    const desktopCoordinates = toDesktopSelectionCoordinates(
+      cursorState.selection,
+      cursorState.selection_shape,
+      isOverlayWindow ? overlayMetrics : null
+    );
+
     const context = createContextFromSelection({
-      selection: cursorState.selection,
+      selection: desktopCoordinates.selection,
+      selectionShape: desktopCoordinates.selectionShape,
+      displayScale: desktopCoordinates.displayScale,
       source: {
         app_name: "AetherCursor",
         window_title: document.title,
@@ -301,6 +534,7 @@ function App() {
     setLatestContext(context);
     setLatestResult(null);
     setNativeCapturePath(null);
+    setNativeCapturePending(isTauriRuntime());
     setInputLog((entries) =>
       appendInputDebugLog(entries, {
         type: "context.captured",
@@ -312,6 +546,7 @@ function App() {
     void captureNativeRegion(context)
       .then((artifact) => {
         if (!artifact) {
+          setNativeCapturePending(false);
           return;
         }
 
@@ -332,13 +567,17 @@ function App() {
         setInputLog((entries) =>
           appendInputDebugLog(entries, {
             type: "capture.native",
-            detail: `${artifact.width}x${artifact.height}`
+            detail: artifact.overlay_hidden
+              ? `${artifact.width}x${artifact.height}:overlay_hidden`
+              : `${artifact.width}x${artifact.height}`
           })
         );
+        setNativeCapturePending(false);
       })
       .catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
 
+        setNativeCapturePending(false);
         setInputLog((entries) =>
           appendInputDebugLog(entries, {
             type: "capture.native.failed",
@@ -346,7 +585,7 @@ function App() {
           })
         );
       });
-  }, [cursorState]);
+  }, [cursorState, isOverlayWindow, overlayMetrics]);
 
   useEffect(() => {
     if (cursorState.status !== "thinking" || !cursorState.intent || !latestContext) {
@@ -354,10 +593,25 @@ function App() {
       return;
     }
 
-    const manifest = builtInAgentRegistry.manifests.find((agent) => agent.id === cursorState.agent_id);
+    const manifest = enabledManifests.find((agent) => agent.id === cursorState.agent_id);
 
     if (!manifest) {
       dispatchCursorEvent({ type: "agent.failed", message: "Selected agent manifest was not found." });
+      return;
+    }
+
+    if (
+      manifest.id === "agent.local.ocr" &&
+      cursorState.intent === "extract_text" &&
+      nativeCapturePending &&
+      !latestContext.content.image_ref
+    ) {
+      setInputLog((entries) =>
+        appendInputDebugLog(entries, {
+          type: "agent.runtime.waiting",
+          detail: "native_capture"
+        })
+      );
       return;
     }
 
@@ -366,7 +620,8 @@ function App() {
       cursorState.intent,
       manifest.id,
       latestContext.privacy.cloud_allowed,
-      latestContext.privacy.user_confirmed_upload
+      latestContext.privacy.user_confirmed_upload,
+      latestContext.content.image_ref ?? "no-image"
     ].join(":");
 
     if (lastRuntimeKeyRef.current === runtimeKey) {
@@ -430,10 +685,14 @@ function App() {
     return () => {
       active = false;
     };
-  }, [cursorState, latestContext]);
+  }, [cursorState, latestContext, nativeCapturePending, enabledManifests]);
 
   const handlePointerDownCapture = useCallback(
     (event: React.PointerEvent<HTMLElement>) => {
+      if (isInteractivePointerTarget(event.target)) {
+        return;
+      }
+
       event.currentTarget.setPointerCapture(event.pointerId);
 
       commitTransition(
@@ -446,6 +705,10 @@ function App() {
 
   const handlePointerMoveCapture = useCallback(
     (event: React.PointerEvent<HTMLElement>) => {
+      if (isInteractivePointerTarget(event.target)) {
+        return;
+      }
+
       commitTransition(
         handlePointerMove(inputSessionRef.current, { x: event.clientX, y: event.clientY }),
         formatPointerDetail(event.clientX, event.clientY)
@@ -456,6 +719,10 @@ function App() {
 
   const handlePointerUpCapture = useCallback(
     (event: React.PointerEvent<HTMLElement>) => {
+      if (isInteractivePointerTarget(event.target)) {
+        return;
+      }
+
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId);
       }
@@ -470,7 +737,7 @@ function App() {
 
   return (
     <main
-      className="app-shell"
+      className={isOverlayWindow ? "app-shell app-shell--overlay-window" : "app-shell"}
       onPointerDownCapture={handlePointerDownCapture}
       onPointerMoveCapture={handlePointerMoveCapture}
       onPointerUpCapture={handlePointerUpCapture}
@@ -497,6 +764,7 @@ function App() {
         onSelectAgent={handleSelectAgent}
         onCloseResult={handleCloseResult}
       />
+      {isOverlayWindow ? null : (
       <section className="debug-window" aria-labelledby="app-title">
         <div className="status-row">
           <span className="status-dot" aria-hidden="true" />
@@ -510,6 +778,7 @@ function App() {
           <div className="input-debug__status">
             <span>状态: {cursorState.status}</span>
             <span>代理数: {builtInAgentRegistry.manifests.length}</span>
+            <span>启用能力: {enabledManifests.length}</span>
             <span>可用路由: {availableActions.length}</span>
             <span>固定数: {pinnedResults.length}</span>
             <span>
@@ -549,6 +818,12 @@ function App() {
             >
               取消
             </button>
+            <button
+              type="button"
+              onClick={() => setCapabilityManagerOpen((open) => !open)}
+            >
+              管理能力
+            </button>
           </div>
           <ol className="input-debug__log" aria-label="最近输入事件">
             {inputLog.map((entry) => (
@@ -559,6 +834,31 @@ function App() {
             ))}
           </ol>
         </section>
+        {capabilityManagerOpen ? (
+          <section className="capability-manager" aria-label="能力管理">
+            <div className="context-debug__header">
+              <h2>管理能力</h2>
+              <span>{enabledManifests.length} / {builtInAgentRegistry.manifests.length}</span>
+            </div>
+            <div className="capability-manager__list">
+              {capabilitySettings.map((setting) => (
+                <label className="capability-manager__item" key={setting.manifest.id}>
+                  <input
+                    type="checkbox"
+                    checked={setting.enabled}
+                    onChange={() => handleToggleCapability(setting.manifest.id)}
+                  />
+                  <span>
+                    <strong>{setting.manifest.name}</strong>
+                    <small>
+                      {formatExecutionMode(setting.manifest.execution_mode)} · {setting.manifest.capabilities.join(", ")}
+                    </small>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </section>
+        ) : null}
         <section className="context-debug" aria-label="最新上下文调试面板">
           <div className="context-debug__header">
             <h2>最新上下文</h2>
@@ -579,7 +879,7 @@ function App() {
               </div>
               <div>
                 <dt>本地文件</dt>
-                <dd>{nativeCapturePath ?? "待处理或不可用"}</dd>
+                <dd>{nativeCapturePending ? "捕获中" : nativeCapturePath ?? "待处理或不可用"}</dd>
               </div>
               <div>
                 <dt>隐私</dt>
@@ -587,7 +887,7 @@ function App() {
               </div>
             </dl>
           ) : (
-            <p>按 Alt+Shift+S 激活并拖动选择区域以生成本地上下文对象。</p>
+            <p>按 Alt+Shift+S 激活智能光标，按 Enter 使用焦点选区，或拖动生成区域上下文。</p>
           )}
         </section>
         {pinnedResults.length > 0 ? (
@@ -623,8 +923,21 @@ function App() {
           ))}
         </div>
       </section>
+      )}
     </main>
   );
+}
+
+function formatExecutionMode(mode: string): string {
+  if (mode === "local") {
+    return "本地";
+  }
+
+  if (mode === "cloud") {
+    return "云端";
+  }
+
+  return "混合";
 }
 
 export default App;

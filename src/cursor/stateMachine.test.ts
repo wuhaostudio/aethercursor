@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { cursorReducer, initialCursorState, type CursorEvent, type CursorState } from "./stateMachine";
+import {
+  FOCUS_SELECTION_HEIGHT,
+  FOCUS_SELECTION_WIDTH,
+  cursorReducer,
+  initialCursorState,
+  type CursorEvent,
+  type CursorState
+} from "./stateMachine";
 
 function reduceEvents(events: readonly CursorEvent[], initial: CursorState = initialCursorState): CursorState {
   return events.reduce(cursorReducer, initial);
@@ -26,9 +33,160 @@ describe("cursor state machine", () => {
     });
   });
 
+  it("activates a focus-sized smart cursor session", () => {
+    const state = cursorReducer(initialCursorState, { type: "activation.pressed", x: 110, y: 80 });
+
+    expect(state).toMatchObject({
+      status: "smart_cursor",
+      selection_shape: {
+        mode: "focus",
+        bounds: {
+          x: 100,
+          y: 72.5,
+          width: FOCUS_SELECTION_WIDTH,
+          height: FOCUS_SELECTION_HEIGHT
+        }
+      },
+      selection: {
+        start_x: 100,
+        start_y: 72.5,
+        current_x: 120,
+        current_y: 87.5
+      }
+    });
+  });
+
+  it("moves the focus shape with the pointer without resolving context", () => {
+    const state = reduceEvents([
+      { type: "activation.pressed", x: 110, y: 80 },
+      { type: "pointer.move", x: 140, y: 100 }
+    ]);
+
+    expect(state).toMatchObject({
+      status: "smart_cursor",
+      selection_shape: {
+        mode: "focus",
+        bounds: {
+          x: 130,
+          y: 92.5
+        }
+      }
+    });
+  });
+
+  it("confirms the focus shape before context resolution", () => {
+    const state = reduceEvents([
+      { type: "activation.pressed", x: 110, y: 80 },
+      { type: "selection.confirmed" }
+    ]);
+
+    expect(state).toMatchObject({
+      status: "resolving",
+      selection_shape: {
+        mode: "focus"
+      }
+    });
+  });
+
+  it("switches from focus to rectangular selection on drag", () => {
+    const state = reduceEvents([
+      { type: "activation.pressed", x: 110, y: 80 },
+      { type: "pointer.down", x: 10, y: 20 },
+      { type: "pointer.move", x: 100, y: 120 },
+      { type: "pointer.up", x: 100, y: 120, valid_selection: true }
+    ]);
+
+    expect(state).toMatchObject({
+      status: "resolving",
+      selection_shape: {
+        mode: "rect",
+        bounds: {
+          x: 10,
+          y: 20,
+          width: 90,
+          height: 100
+        }
+      }
+    });
+  });
+
+  it("cycles from focus to lasso and rect selection modes", () => {
+    const lasso = reduceEvents([
+      { type: "activation.pressed", x: 110, y: 80 },
+      { type: "selection.mode.next" }
+    ]);
+
+    expect(lasso).toMatchObject({
+      status: "smart_cursor",
+      selection_shape: {
+        mode: "lasso"
+      }
+    });
+
+    const rect = cursorReducer(lasso, { type: "selection.mode.next" });
+    expect(rect.selection_shape?.mode).toBe("rect");
+
+    const focus = cursorReducer(rect, { type: "selection.mode.next" });
+    expect(focus.selection_shape?.mode).toBe("focus");
+  });
+
+  it("collects lasso path points and resolves using path bounds", () => {
+    const state = reduceEvents([
+      { type: "activation.pressed", x: 110, y: 80 },
+      { type: "selection.mode.next" },
+      { type: "pointer.down", x: 10, y: 20 },
+      { type: "pointer.move", x: 40, y: 70 },
+      { type: "pointer.move", x: 80, y: 30 },
+      { type: "pointer.up", x: 10, y: 20, valid_selection: true }
+    ]);
+
+    expect(state).toMatchObject({
+      status: "resolving",
+      selection: {
+        start_x: 10,
+        start_y: 20,
+        current_x: 80,
+        current_y: 70
+      },
+      selection_shape: {
+        mode: "lasso",
+        bounds: {
+          x: 10,
+          y: 20,
+          width: 70,
+          height: 50
+        },
+        path: [
+          { x: 10, y: 20 },
+          { x: 40, y: 70 },
+          { x: 80, y: 30 },
+          { x: 10, y: 20 }
+        ]
+      }
+    });
+  });
+
+  it("returns to smart cursor when lasso path is too small", () => {
+    const state = reduceEvents([
+      { type: "activation.pressed", x: 110, y: 80 },
+      { type: "selection.mode.next" },
+      { type: "pointer.down", x: 10, y: 20 },
+      { type: "pointer.move", x: 12, y: 22 },
+      { type: "pointer.up", x: 13, y: 23, valid_selection: false }
+    ]);
+
+    expect(state).toMatchObject({
+      status: "smart_cursor",
+      selection_shape: {
+        mode: "focus"
+      }
+    });
+  });
+
   it("returns to normal from any non-normal state when cancelled", () => {
     const states: readonly CursorState[] = [
       { status: "armed" },
+      { status: "smart_cursor" },
       { status: "inspecting" },
       { status: "selecting" },
       { status: "resolving" },
