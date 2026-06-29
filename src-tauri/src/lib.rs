@@ -11,12 +11,18 @@ struct GlobalShortcutEvent {
     state: String,
     cursor_x: Option<f64>,
     cursor_y: Option<f64>,
+    selected_text: Option<String>,
     overlay_metrics: Option<OverlayWindowMetrics>,
 }
 
 #[tauri::command]
 fn app_status() -> &'static str {
     "p11-ready"
+}
+
+#[tauri::command]
+fn read_selected_text() -> Result<Option<String>, String> {
+    read_selected_text_native()
 }
 
 fn setup_global_shortcut(app: &AppHandle) -> Result<(), String> {
@@ -36,6 +42,11 @@ fn setup_global_shortcut(app: &AppHandle) -> Result<(), String> {
             } else {
                 None
             };
+            let selected_text = if pressed {
+                read_selected_text_native().ok().flatten()
+            } else {
+                None
+            };
             let (cursor_x, cursor_y) = cursor_position
                 .map(|position| (Some(position.x), Some(position.y)))
                 .unwrap_or((None, None));
@@ -52,6 +63,7 @@ fn setup_global_shortcut(app: &AppHandle) -> Result<(), String> {
                     state: state.to_string(),
                     cursor_x,
                     cursor_y,
+                    selected_text,
                     overlay_metrics,
                 },
             );
@@ -407,6 +419,16 @@ fn base64_encode(data: &[u8]) -> String {
     String::from_utf8(result).unwrap_or_default()
 }
 
+#[cfg(target_os = "windows")]
+fn read_selected_text_native() -> Result<Option<String>, String> {
+    windows_selected_text::read_selected_text()
+}
+
+#[cfg(not(target_os = "windows"))]
+fn read_selected_text_native() -> Result<Option<String>, String> {
+    Ok(None)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -417,6 +439,7 @@ pub fn run() {
             get_overlay_window_metrics,
             hide_overlay_window,
             read_capture_file,
+            read_selected_text,
             register_global_shortcut,
             show_overlay_window,
             unregister_global_shortcut
@@ -578,5 +601,110 @@ mod windows_capture {
         bytes.extend_from_slice(pixels);
 
         fs::write(path, bytes).map_err(|error| format!("failed to write capture bitmap: {error}"))
+    }
+}
+
+#[cfg(target_os = "windows")]
+mod windows_selected_text {
+    use windows::Win32::Foundation::{RPC_E_CHANGED_MODE, S_FALSE, S_OK};
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER,
+        COINIT_APARTMENTTHREADED,
+    };
+    use windows::Win32::UI::Accessibility::{
+        CUIAutomation, IUIAutomation, IUIAutomationTextPattern, UIA_TextPatternId,
+    };
+
+    const MAX_SELECTED_TEXT_LENGTH: i32 = 8000;
+
+    pub fn read_selected_text() -> Result<Option<String>, String> {
+        let _com = ComApartment::initialize()?;
+
+        unsafe {
+            let automation: IUIAutomation =
+                CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER)
+                    .map_err(|error| format!("failed to create UI Automation: {error}"))?;
+            let focused = automation
+                .GetFocusedElement()
+                .map_err(|error| format!("failed to read focused element: {error}"))?;
+            let text_pattern: IUIAutomationTextPattern = focused
+                .GetCurrentPatternAs(UIA_TextPatternId)
+                .map_err(|error| format!("focused element has no text pattern: {error}"))?;
+            let ranges = text_pattern
+                .GetSelection()
+                .map_err(|error| format!("failed to read text selection: {error}"))?;
+            let length = ranges
+                .Length()
+                .map_err(|error| format!("failed to read selection range count: {error}"))?;
+
+            let mut parts = Vec::new();
+
+            for index in 0..length {
+                let range = ranges
+                    .GetElement(index)
+                    .map_err(|error| format!("failed to read selection range: {error}"))?;
+                let text = range
+                    .GetText(MAX_SELECTED_TEXT_LENGTH)
+                    .map_err(|error| format!("failed to read selected text: {error}"))?
+                    .to_string();
+                let normalized = normalize_selected_text(&text);
+
+                if !normalized.is_empty() {
+                    parts.push(normalized);
+                }
+            }
+
+            let text = parts.join("\n");
+
+            if text.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(text))
+            }
+        }
+    }
+
+    struct ComApartment {
+        should_uninitialize: bool,
+    }
+
+    impl ComApartment {
+        fn initialize() -> Result<Self, String> {
+            let result = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+
+            if result == S_OK || result == S_FALSE {
+                return Ok(Self {
+                    should_uninitialize: true,
+                });
+            }
+
+            if result == RPC_E_CHANGED_MODE {
+                return Ok(Self {
+                    should_uninitialize: false,
+                });
+            }
+
+            Err(format!("failed to initialize COM: {result:?}"))
+        }
+    }
+
+    impl Drop for ComApartment {
+        fn drop(&mut self) {
+            if self.should_uninitialize {
+                unsafe {
+                    CoUninitialize();
+                }
+            }
+        }
+    }
+
+    fn normalize_selected_text(text: &str) -> String {
+        text.replace("\r\n", "\n")
+            .replace('\r', "\n")
+            .lines()
+            .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 }

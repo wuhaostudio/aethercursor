@@ -7,8 +7,8 @@ import {
   type RoutedAgent
 } from "./agents/agentRegistry";
 import { createContextFromSelection } from "./capture/contextCapture";
-import { createContextResolutionErrorResult, resolveContextForAgent } from "./capture/contextResolver";
-import { captureNativeRegion, isTauriRuntime } from "./capture/nativeCapture";
+import { readDomSelectedText } from "./capture/selectedText";
+import { isTauriRuntime } from "./capture/nativeCapture";
 import {
   createCapabilitySettings,
   filterEnabledManifests,
@@ -26,7 +26,7 @@ import {
 import { shouldResetOverlaySession } from "./desktop/overlaySession";
 import { OverlayRoot } from "./overlay/OverlayRoot";
 import { confirmCloudUpload } from "./policy/policy";
-import { executeAgentRuntime } from "./runtime/agentRuntime";
+import { executeContextResolvedAgent } from "./runtime/contextResolvedAgent";
 import { cursorReducer, initialCursorState, type CursorEvent, type CursorState } from "./cursor/stateMachine";
 import {
   handlePointerDown,
@@ -41,7 +41,6 @@ import {
 import { appendInputDebugLog, formatPointerDetail, type InputDebugEntry } from "./input/inputDebugLog";
 import { isInteractivePointerTarget } from "./input/pointerTargets";
 import { ttsPlayer, type TtsPlaybackState } from "./tts/ttsPlayer";
-import type { AgentManifest, Intent } from "./shared/agent";
 import type { ContextProtocol } from "./shared/context";
 import { phaseZeroModules } from "./shared/project";
 import type { AgentResult } from "./shared/result";
@@ -53,6 +52,7 @@ interface GlobalShortcutEventPayload {
   readonly state: "pressed" | "released";
   readonly cursor_x?: number;
   readonly cursor_y?: number;
+  readonly selected_text?: string | null;
   readonly overlay_metrics?: OverlayWindowMetrics | null;
 }
 
@@ -104,6 +104,7 @@ function App() {
   const inputSessionRef = useRef<InputSession>(initialInputSession);
   const lastResolvedSelectionKeyRef = useRef<string | null>(null);
   const lastRuntimeKeyRef = useRef<string | null>(null);
+  const pendingSelectedTextRef = useRef<string | null>(null);
   const [inputSession, setInputSession] = useState<InputSession>(initialInputSession);
   const [inputLog, setInputLog] = useState<readonly InputDebugEntry[]>([]);
   const [latestContext, setLatestContext] = useState<ContextProtocol | null>(null);
@@ -387,6 +388,8 @@ function App() {
           setOverlayMetrics(event.payload.overlay_metrics);
         }
 
+        pendingSelectedTextRef.current = normalizeOptionalText(event.payload.selected_text);
+
         const shortcutPoint =
           typeof event.payload.cursor_x === "number" && typeof event.payload.cursor_y === "number"
             ? toOverlayLogicalPoint(event.payload.cursor_x, event.payload.cursor_y, activeOverlayMetrics)
@@ -515,6 +518,8 @@ function App() {
     }
 
     lastResolvedSelectionKeyRef.current = selectionKey;
+    const selectedText = pendingSelectedTextRef.current ?? (isOverlayWindow ? null : readDomSelectedText());
+    pendingSelectedTextRef.current = null;
 
     const desktopCoordinates = toDesktopSelectionCoordinates(
       cursorState.selection,
@@ -526,6 +531,7 @@ function App() {
       selection: desktopCoordinates.selection,
       selectionShape: desktopCoordinates.selectionShape,
       displayScale: desktopCoordinates.displayScale,
+      selectedText,
       source: {
         app_name: "AetherCursor",
         window_title: document.title,
@@ -590,7 +596,7 @@ function App() {
     let active = true;
     const startedAt = performance.now();
 
-    void resolveContextAndExecuteAgent({
+    void executeContextResolvedAgent({
       manifest,
       context: latestContext,
       intent: cursorState.intent,
@@ -620,6 +626,31 @@ function App() {
         setInputLog((entries) =>
           appendInputDebugLog(entries, {
             type: "capture.native.failed",
+            detail: message
+          })
+        );
+      },
+      onOcrStart: (reason) => {
+        setInputLog((entries) =>
+          appendInputDebugLog(entries, {
+            type: "context.ocr.required",
+            detail: reason
+          })
+        );
+      },
+      onOcrSuccess: (context, text) => {
+        setLatestContext(context);
+        setInputLog((entries) =>
+          appendInputDebugLog(entries, {
+            type: "context.ocr.resolved",
+            detail: `${text.length} chars`
+          })
+        );
+      },
+      onOcrFailure: (message) => {
+        setInputLog((entries) =>
+          appendInputDebugLog(entries, {
+            type: "context.ocr.failed",
             detail: message
           })
         );
@@ -918,100 +949,6 @@ function App() {
   );
 }
 
-async function resolveContextAndExecuteAgent(options: {
-  readonly manifest: AgentManifest;
-  readonly context: ContextProtocol;
-  readonly intent: Intent;
-  readonly timeout_ms: number;
-  readonly startedAt: number;
-  readonly onCaptureStart: (reason: string) => void;
-  readonly onCaptureSuccess: (
-    context: ContextProtocol,
-    detail: { readonly file_path: string; readonly width: number; readonly height: number; readonly overlay_hidden?: boolean }
-  ) => void;
-  readonly onCaptureFailure: (message: string) => void;
-}): Promise<AgentResult> {
-  let resolved = resolveContextForAgent({
-    manifest: options.manifest,
-    context: options.context,
-    intent: options.intent
-  });
-
-  if (resolved.status === "requires_capture") {
-    options.onCaptureStart(resolved.reason);
-
-    try {
-      const artifact = await captureNativeRegion(options.context);
-
-      if (!artifact) {
-        resolved = {
-          status: "error",
-          code: "capture_unavailable",
-          message: "Selected-region capture is unavailable in this runtime."
-        };
-      } else {
-        const capturedContext: ContextProtocol = {
-          ...options.context,
-          content: {
-            ...options.context.content,
-            image_ref: artifact.image_ref
-          }
-        };
-
-        options.onCaptureSuccess(capturedContext, artifact);
-        resolved = resolveContextForAgent({
-          manifest: options.manifest,
-          context: capturedContext,
-          intent: options.intent
-        });
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      options.onCaptureFailure(message);
-      resolved = {
-        status: "error",
-        code: "capture_failed",
-        message
-      };
-    }
-  }
-
-  if (resolved.status === "error") {
-    return createContextResolutionErrorResult(
-      {
-        manifest: options.manifest,
-        context: options.context,
-        intent: options.intent
-      },
-      resolved,
-      options.startedAt
-    );
-  }
-
-  if (resolved.status !== "ready") {
-    return createContextResolutionErrorResult(
-      {
-        manifest: options.manifest,
-        context: options.context,
-        intent: options.intent
-      },
-      {
-        status: "error",
-        code: "context_unavailable",
-        message: resolved.reason
-      },
-      options.startedAt
-    );
-  }
-
-  return executeAgentRuntime({
-    manifest: options.manifest,
-    context: resolved.context,
-    intent: options.intent,
-    timeout_ms: options.timeout_ms
-  });
-}
-
 function formatExecutionMode(mode: string): string {
   if (mode === "local") {
     return "本地";
@@ -1022,6 +959,16 @@ function formatExecutionMode(mode: string): string {
   }
 
   return "混合";
+}
+
+function normalizeOptionalText(text: string | null | undefined): string | null {
+  if (typeof text !== "string") {
+    return null;
+  }
+
+  const normalized = text.trim();
+
+  return normalized.length > 0 ? normalized : null;
 }
 
 export default App;

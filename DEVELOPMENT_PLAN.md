@@ -465,7 +465,7 @@ Completed:
 
 Current validation count:
 
-- 142 tests across 24 test files.
+- 151 tests across 26 test files.
 
 ## Known Gaps
 
@@ -687,7 +687,7 @@ Exit standard:
 
 ### P22: Context Resolver Upgrade
 
-Status: partially implemented.
+Status: `Completely`
 
 Goal:
 
@@ -716,16 +716,25 @@ Completed:
   are captured, while hiding actions when no required input can be produced.
 - Runtime execution returns structured context-resolution errors when required
   context cannot be produced.
+- Text-capable agents can now automatically fall back to selected-region OCR:
+  capture runs only when text is unavailable, local OCR resolves `ocr_text`, and
+  the original text agent then receives the OCR text context.
+- Browser and main-window development flows now read current DOM selected text
+  into `selected_text` before capture, while the desktop overlay window avoids
+  reading its own UI selection.
+- Windows desktop activation reads selected text from the focused element through
+  UI Automation before the overlay takes focus, then passes it into the context
+  resolver without using clipboard or background monitoring.
 - Added focused tests for resolver behavior, action routing before capture, and
   no-input routing.
+- Added focused tests for context-resolved runtime execution, including direct
+  text execution, capture plus OCR fallback, and OCR fallback failure mapping.
 - Added `docs/p22-validation.md` validation record.
 
-Remaining:
+Remaining outside P22:
 
-- Real selected text extraction through UI Automation or browser DOM bridge.
-- Automatic OCR fallback for text agents when no text is available but pixels
-  can be captured.
-- Provider-specific image upload support for true vision/table execution.
+- Provider-specific image upload support for true vision/table execution remains
+  in P23.
 
 Exit standard:
 

@@ -13,6 +13,11 @@ export type ContextResolution =
       readonly reason: string;
     }
   | {
+      readonly status: "requires_ocr";
+      readonly context: ContextProtocol;
+      readonly reason: string;
+    }
+  | {
       readonly status: "error";
       readonly code: string;
       readonly message: string;
@@ -33,6 +38,12 @@ export function resolveContextForAgent(request: ResolveContextForAgentRequest): 
 
     if (textContext) {
       return textContext;
+    }
+
+    const ocrFallback = resolveOcrFallbackContext(context, manifest);
+
+    if (ocrFallback) {
+      return ocrFallback;
     }
   }
 
@@ -138,12 +149,43 @@ function resolveImageContext(context: ContextProtocol, manifest: AgentManifest):
   };
 }
 
+function resolveOcrFallbackContext(context: ContextProtocol, manifest: AgentManifest): ContextResolution | null {
+  if (!canUseOcrFallback(manifest)) {
+    return null;
+  }
+
+  if (hasText(context.content.image_ref)) {
+    return {
+      status: "requires_ocr",
+      context,
+      reason: `${manifest.name} requires OCR text from the selected region.`
+    };
+  }
+
+  if (context.selection.bounds.width > 0 && context.selection.bounds.height > 0) {
+    return {
+      status: "requires_capture",
+      reason: `${manifest.name} requires selected-region capture for OCR fallback.`
+    };
+  }
+
+  return {
+    status: "error",
+    code: "invalid_selection",
+    message: "Selected region has no capturable area for OCR fallback."
+  };
+}
+
 function shouldPreferImageInput(manifest: AgentManifest, intent: Intent): boolean {
   return (
     intent === "extract_text" ||
     manifest.capabilities.includes("image_understanding") ||
     manifest.capabilities.includes("table_extraction")
   );
+}
+
+function canUseOcrFallback(manifest: AgentManifest): boolean {
+  return manifest.input_types.includes("ocr_text");
 }
 
 function withInputType(

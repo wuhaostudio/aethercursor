@@ -97,6 +97,51 @@ describe("context resolver", () => {
     });
   });
 
+  it("requires capture for OCR fallback when text agents have no text", () => {
+    const resolved = resolveContextForAgent({
+      manifest: sampleAgentManifest,
+      context: {
+        ...sampleContext,
+        content: {
+          selected_text: null,
+          ocr_text: null,
+          image_ref: null
+        }
+      },
+      intent: "explain"
+    });
+
+    expect(resolved).toEqual({
+      status: "requires_capture",
+      reason: "Text Explainer requires selected-region capture for OCR fallback."
+    });
+  });
+
+  it("requires OCR fallback after text agents have captured pixels", () => {
+    const resolved = resolveContextForAgent({
+      manifest: sampleAgentManifest,
+      context: {
+        ...sampleContext,
+        content: {
+          selected_text: null,
+          ocr_text: null,
+          image_ref: "local://capture/ctx_001.bmp"
+        }
+      },
+      intent: "translate"
+    });
+
+    expect(resolved).toMatchObject({
+      status: "requires_ocr",
+      reason: "Text Explainer requires OCR text from the selected region.",
+      context: {
+        content: {
+          image_ref: "local://capture/ctx_001.bmp"
+        }
+      }
+    });
+  });
+
   it("returns an image-region context when pixels are available", () => {
     const resolved = resolveContextForAgent({
       manifest: visionManifest,
