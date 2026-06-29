@@ -82,6 +82,182 @@ Important distinction:
 - Text-oriented capabilities should prefer structured text sources first, then
   OCR fallback when necessary.
 
+## Product Design Reference
+
+These product notes were merged from the former `DESIGN.md` and `PLAN.md`
+documents so this file remains the single source of truth for product direction,
+development status, and roadmap.
+
+### Product Thesis
+
+Modern AI products often require users to copy visible content into a chat
+window. AetherCursor changes the interaction model:
+
+```text
+See something -> point at it -> select it -> choose an AI action
+  -> get the result in place
+```
+
+Core principles:
+
+- AI should work near the object the user is looking at.
+- Users must actively decide what screen region is processed.
+- Tasks should be selected by intent, not by model name.
+- Cloud processing must be transparent and permissioned.
+- Agent capabilities should be added through a standard protocol.
+
+### Product Scope
+
+The current product remains a smart cursor framework, not a full autonomous
+computer-control agent.
+
+Included in the current framework direction:
+
+- Smart cursor activation model.
+- Cursor visual states.
+- Explicit shape-based selection.
+- Translucent desktop overlay UI.
+- Minimal context capture model.
+- Action Menu and Result Canvas.
+- Agent and capability protocol.
+- Privacy and permission model.
+- Local-first and cloud-optional processing policy.
+- Extension points for future agents.
+
+Deferred from the current scope:
+
+- Fully autonomous computer control.
+- Multi-agent collaboration chains.
+- Long-term memory.
+- Agent marketplace.
+- Enterprise admin console.
+- Background screen monitoring.
+- Automatic hover-based AI execution.
+- Complex workflow automation.
+
+### Visual Direction
+
+AetherCursor should feel like a precise, lightweight AI instrument rather than a
+chat product.
+
+Keywords:
+
+- Semi-transparent.
+- Frosted glass.
+- High-tech.
+- Minimal.
+- Spatial.
+- Contextual.
+- Quiet.
+- Fast.
+
+Suggested overlay tokens:
+
+```text
+overlay.background: rgba(12, 18, 28, 0.58)
+overlay.border: rgba(120, 220, 255, 0.42)
+overlay.highlight: rgba(80, 210, 255, 0.86)
+overlay.text: rgba(245, 248, 255, 0.96)
+overlay.muted_text: rgba(210, 220, 235, 0.68)
+overlay.blur: 18px
+overlay.radius: 8px
+```
+
+The UI should avoid heavy gradients, large decorative shapes, and
+marketing-style panels. The overlay exists to support interaction, not to become
+the main focus.
+
+### Result Canvas Expectations
+
+The Result Canvas should stay close to the selected content while avoiding
+occlusion. It is both an output surface and a local control surface for deciding
+whether to invoke more compatible agents.
+
+Expected content and controls:
+
+- Header with selected content label, local/cloud indicator, and compact
+  controls.
+- Source block with extracted text or selected-content preview when useful.
+- Default output blocks such as translation, explanation, summary, or extracted
+  text.
+- Explicit expansion entry for additional compatible agents.
+- Immediate controls for read aloud, copy, pin, switch agent, close, and more
+  agents.
+
+Expanded agents must never run automatically. They run only after explicit user
+selection and policy approval when required.
+
+### Success Metrics
+
+Product interaction metrics:
+
+- Time from activation to action menu.
+- Time from selection to result.
+- Selection correction rate.
+- Action cancellation rate.
+- Permission prompt acceptance rate.
+- Result copy or follow-up rate.
+- Result Canvas extension-agent invocation rate.
+
+Qualitative metrics:
+
+- Does the smart cursor feel non-invasive?
+- Does the overlay feel precise and readable?
+- Does the user understand when cloud AI is used?
+- Does the user feel in control of what is sent?
+- Can new agents be added without changing core UI code?
+
+### Risks and Design Responses
+
+Risk: AI feels too intrusive.
+
+Response:
+
+- Active invocation only.
+- No default background monitoring.
+- Minimal overlay.
+
+Risk: Privacy concerns block adoption.
+
+Response:
+
+- Local-first policy.
+- Clear cloud confirmation.
+- Visible agent identity.
+- Minimal context capture.
+
+Risk: UI becomes a chat window.
+
+Response:
+
+- Results appear near selected content.
+- Chat remains an optional continuation, not the primary mode.
+
+Risk: Too many actions overwhelm users.
+
+Response:
+
+- Show only context-compatible and enabled actions.
+- Hide advanced agents behind a clearly labeled Result Canvas expansion entry.
+- Keep default output presets small and user-configurable.
+
+Risk: Agent ecosystem becomes inconsistent.
+
+Response:
+
+- Require manifest and capability protocol.
+- Standardize input and output types.
+- Enforce permission declarations.
+
+### Open Design Questions
+
+- Should the action menu be radial, vertical, or adaptive?
+- How much context should be visible in the cloud confirmation prompt?
+- Should OCR always run locally before cloud routing?
+- Should result canvases disappear automatically or remain until dismissed?
+- How should pinned results behave across app switches?
+- Should enterprise deployments disable cloud agents by default?
+
 ## Interaction Model
 
 ### Activation
