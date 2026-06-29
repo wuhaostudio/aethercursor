@@ -66,7 +66,7 @@ export function createContextFromSelection(options: CaptureContextOptions): Cont
     content: {
       selected_text: options.selectedText ?? null,
       ocr_text: options.ocrText ?? null,
-      image_ref: options.createImageRef?.(contextId) ?? createLocalCaptureImageRef(contextId)
+      image_ref: options.createImageRef?.(contextId) ?? null
     },
     metadata: {
       language: "auto",

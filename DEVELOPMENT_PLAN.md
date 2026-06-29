@@ -465,7 +465,7 @@ Completed:
 
 Current validation count:
 
-- 135 tests across 23 test files.
+- 142 tests across 24 test files.
 
 ## Known Gaps
 
@@ -687,7 +687,7 @@ Exit standard:
 
 ### P22: Context Resolver Upgrade
 
-Status: not started.
+Status: partially implemented.
 
 Goal:
 
@@ -701,6 +701,31 @@ Required:
 - OCR fallback for text capabilities.
 - Region image capture only when required.
 - Structured errors when required context cannot be produced.
+
+Completed:
+
+- Added a context resolver that inspects the selected agent manifest input
+  types before runtime execution.
+- Text-capable agents now prefer `selected_text`, then `ocr_text`, and drop
+  image references from the resolved runtime context when pixels are not needed.
+- Image-capable agents request selected-region capture only when no image
+  artifact is already available.
+- Initial context creation no longer pretends that a local capture image exists
+  before native capture has actually run.
+- Agent action routing now keeps image-capable actions available before pixels
+  are captured, while hiding actions when no required input can be produced.
+- Runtime execution returns structured context-resolution errors when required
+  context cannot be produced.
+- Added focused tests for resolver behavior, action routing before capture, and
+  no-input routing.
+- Added `docs/p22-validation.md` validation record.
+
+Remaining:
+
+- Real selected text extraction through UI Automation or browser DOM bridge.
+- Automatic OCR fallback for text agents when no text is available but pixels
+  can be captured.
+- Provider-specific image upload support for true vision/table execution.
 
 Exit standard:
 

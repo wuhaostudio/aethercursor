@@ -39,7 +39,7 @@ describe("context capture", () => {
       content: {
         selected_text: null,
         ocr_text: null,
-        image_ref: "local://capture/ctx_test.png"
+        image_ref: null
       },
       privacy: {
         cloud_allowed: false,
@@ -115,7 +115,8 @@ describe("context capture", () => {
   it("creates cleanup requests for local image refs", () => {
     const context = createContextFromSelection({
       selection,
-      createContextId: () => "ctx_cleanup"
+      createContextId: () => "ctx_cleanup",
+      createImageRef: createLocalCaptureImageRef
     });
 
     expect(createLocalCaptureImageRef("ctx_cleanup")).toBe("local://capture/ctx_cleanup.png");

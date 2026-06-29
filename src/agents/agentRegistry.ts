@@ -108,7 +108,30 @@ function createRoutedAgent(manifest: AgentManifest, context: ContextProtocol, in
 }
 
 function isManifestCompatible(manifest: AgentManifest, context: ContextProtocol, intent: Intent): boolean {
-  return manifest.capabilities.includes(intent) && manifest.input_types.includes(context.selection.type);
+  return (
+    manifest.capabilities.includes(intent) &&
+    manifest.input_types.some((inputType) => isContextInputPotentiallyAvailable(inputType, context))
+  );
+}
+
+function isContextInputPotentiallyAvailable(inputType: AgentManifest["input_types"][number], context: ContextProtocol): boolean {
+  if (inputType === "text") {
+    return hasText(context.content.selected_text);
+  }
+
+  if (inputType === "ocr_text") {
+    return hasText(context.content.ocr_text) || context.selection.bounds.width > 0 && context.selection.bounds.height > 0;
+  }
+
+  if (inputType === "image_region" || inputType === "screen_region") {
+    return context.selection.bounds.width > 0 && context.selection.bounds.height > 0;
+  }
+
+  return inputType === context.selection.type;
+}
+
+function hasText(value: string | null): boolean {
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 function compareRoutedAgents(left: RoutedAgent, right: RoutedAgent): number {

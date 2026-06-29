@@ -94,6 +94,43 @@ describe("agent registry", () => {
     expect(actions.length).toBeGreaterThanOrEqual(4);
   });
 
+  it("keeps image-capable actions available before pixels are captured", () => {
+    const { manifests } = loadBuiltInAgentManifests();
+    const actions = getAvailableAgentActions(manifests, {
+      ...sampleContext,
+      content: {
+        selected_text: null,
+        ocr_text: null,
+        image_ref: null
+      }
+    });
+
+    expect(actions.some((action) => action.manifest.id === "agent.cloud.vision-analyze")).toBe(true);
+  });
+
+  it("hides actions when no required input can be produced", () => {
+    const { manifests } = loadBuiltInAgentManifests();
+    const actions = getAvailableAgentActions(manifests, {
+      ...sampleContext,
+      selection: {
+        ...sampleContext.selection,
+        bounds: {
+          x: 0,
+          y: 0,
+          width: 0,
+          height: 0
+        }
+      },
+      content: {
+        selected_text: null,
+        ocr_text: null,
+        image_ref: null
+      }
+    });
+
+    expect(actions).toEqual([]);
+  });
+
   it("keeps blocked cloud actions visible with a policy decision", () => {
     const { manifests } = loadBuiltInAgentManifests();
     const actions = getAvailableAgentActions(manifests, {

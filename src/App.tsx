@@ -7,6 +7,7 @@ import {
   type RoutedAgent
 } from "./agents/agentRegistry";
 import { createContextFromSelection } from "./capture/contextCapture";
+import { createContextResolutionErrorResult, resolveContextForAgent } from "./capture/contextResolver";
 import { captureNativeRegion, isTauriRuntime } from "./capture/nativeCapture";
 import {
   createCapabilitySettings,
@@ -40,6 +41,7 @@ import {
 import { appendInputDebugLog, formatPointerDetail, type InputDebugEntry } from "./input/inputDebugLog";
 import { isInteractivePointerTarget } from "./input/pointerTargets";
 import { ttsPlayer, type TtsPlaybackState } from "./tts/ttsPlayer";
+import type { AgentManifest, Intent } from "./shared/agent";
 import type { ContextProtocol } from "./shared/context";
 import { phaseZeroModules } from "./shared/project";
 import type { AgentResult } from "./shared/result";
@@ -534,57 +536,14 @@ function App() {
     setLatestContext(context);
     setLatestResult(null);
     setNativeCapturePath(null);
-    setNativeCapturePending(isTauriRuntime());
+    setNativeCapturePending(false);
     setInputLog((entries) =>
       appendInputDebugLog(entries, {
-        type: "context.captured",
+        type: "context.resolved",
         detail: `${context.selection.bounds.width}x${context.selection.bounds.height}`
       })
     );
     dispatchCursorEvent({ type: "context.resolved" });
-
-    void captureNativeRegion(context)
-      .then((artifact) => {
-        if (!artifact) {
-          setNativeCapturePending(false);
-          return;
-        }
-
-        setLatestContext((currentContext) => {
-          if (!currentContext || currentContext.context_id !== artifact.context_id) {
-            return currentContext;
-          }
-
-          return {
-            ...currentContext,
-            content: {
-              ...currentContext.content,
-              image_ref: artifact.image_ref
-            }
-          };
-        });
-        setNativeCapturePath(artifact.file_path);
-        setInputLog((entries) =>
-          appendInputDebugLog(entries, {
-            type: "capture.native",
-            detail: artifact.overlay_hidden
-              ? `${artifact.width}x${artifact.height}:overlay_hidden`
-              : `${artifact.width}x${artifact.height}`
-          })
-        );
-        setNativeCapturePending(false);
-      })
-      .catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
-
-        setNativeCapturePending(false);
-        setInputLog((entries) =>
-          appendInputDebugLog(entries, {
-            type: "capture.native.failed",
-            detail: message
-          })
-        );
-      });
   }, [cursorState, isOverlayWindow, overlayMetrics]);
 
   useEffect(() => {
@@ -600,16 +559,11 @@ function App() {
       return;
     }
 
-    if (
-      manifest.id === "agent.local.ocr" &&
-      cursorState.intent === "extract_text" &&
-      nativeCapturePending &&
-      !latestContext.content.image_ref
-    ) {
+    if (nativeCapturePending) {
       setInputLog((entries) =>
         appendInputDebugLog(entries, {
           type: "agent.runtime.waiting",
-          detail: "native_capture"
+          detail: "context_resolution"
         })
       );
       return;
@@ -621,7 +575,10 @@ function App() {
       manifest.id,
       latestContext.privacy.cloud_allowed,
       latestContext.privacy.user_confirmed_upload,
-      latestContext.content.image_ref ?? "no-image"
+      latestContext.content.selected_text ?? "no-selected-text",
+      latestContext.content.ocr_text ?? "no-ocr-text",
+      latestContext.content.image_ref ?? "no-image",
+      nativeCapturePending ? "capture-pending" : "capture-ready"
     ].join(":");
 
     if (lastRuntimeKeyRef.current === runtimeKey) {
@@ -631,16 +588,49 @@ function App() {
     lastRuntimeKeyRef.current = runtimeKey;
 
     let active = true;
+    const startedAt = performance.now();
 
-    void executeAgentRuntime({
+    void resolveContextAndExecuteAgent({
       manifest,
       context: latestContext,
       intent: cursorState.intent,
-      timeout_ms: 5000
+      timeout_ms: 5000,
+      onCaptureStart: (reason) => {
+        setNativeCapturePending(true);
+        setInputLog((entries) =>
+          appendInputDebugLog(entries, {
+            type: "context.capture.required",
+            detail: reason
+          })
+        );
+      },
+      onCaptureSuccess: (context, detail) => {
+        setLatestContext(context);
+        setNativeCapturePath(detail.file_path);
+        setInputLog((entries) =>
+          appendInputDebugLog(entries, {
+            type: "capture.native",
+            detail: detail.overlay_hidden
+              ? `${detail.width}x${detail.height}:overlay_hidden`
+              : `${detail.width}x${detail.height}`
+          })
+        );
+      },
+      onCaptureFailure: (message) => {
+        setInputLog((entries) =>
+          appendInputDebugLog(entries, {
+            type: "capture.native.failed",
+            detail: message
+          })
+        );
+      },
+      startedAt
     }).then((result) => {
       if (!active) {
         return;
       }
+
+      setNativeCapturePending(false);
 
       setLatestResult(result);
       setInputLog((entries) =>
@@ -926,6 +916,100 @@ function App() {
       )}
     </main>
   );
+}
+
+async function resolveContextAndExecuteAgent(options: {
+  readonly manifest: AgentManifest;
+  readonly context: ContextProtocol;
+  readonly intent: Intent;
+  readonly timeout_ms: number;
+  readonly startedAt: number;
+  readonly onCaptureStart: (reason: string) => void;
+  readonly onCaptureSuccess: (
+    context: ContextProtocol,
+    detail: { readonly file_path: string; readonly width: number; readonly height: number; readonly overlay_hidden?: boolean }
+  ) => void;
+  readonly onCaptureFailure: (message: string) => void;
+}): Promise<AgentResult> {
+  let resolved = resolveContextForAgent({
+    manifest: options.manifest,
+    context: options.context,
+    intent: options.intent
+  });
+
+  if (resolved.status === "requires_capture") {
+    options.onCaptureStart(resolved.reason);
+
+    try {
+      const artifact = await captureNativeRegion(options.context);
+
+      if (!artifact) {
+        resolved = {
+          status: "error",
+          code: "capture_unavailable",
+          message: "Selected-region capture is unavailable in this runtime."
+        };
+      } else {
+        const capturedContext: ContextProtocol = {
+          ...options.context,
+          content: {
+            ...options.context.content,
+            image_ref: artifact.image_ref
+          }
+        };
+
+        options.onCaptureSuccess(capturedContext, artifact);
+        resolved = resolveContextForAgent({
+          manifest: options.manifest,
+          context: capturedContext,
+          intent: options.intent
+        });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      options.onCaptureFailure(message);
+      resolved = {
+        status: "error",
+        code: "capture_failed",
+        message
+      };
+    }
+  }
+
+  if (resolved.status === "error") {
+    return createContextResolutionErrorResult(
+      {
+        manifest: options.manifest,
+        context: options.context,
+        intent: options.intent
+      },
+      resolved,
+      options.startedAt
+    );
+  }
+
+  if (resolved.status !== "ready") {
+    return createContextResolutionErrorResult(
+      {
+        manifest: options.manifest,
+        context: options.context,
+        intent: options.intent
+      },
+      {
+        status: "error",
+        code: "context_unavailable",
+        message: resolved.reason
+      },
+      options.startedAt
+    );
+  }
+
+  return executeAgentRuntime({
+    manifest: options.manifest,
+    context: resolved.context,
+    intent: options.intent,
+    timeout_ms: options.timeout_ms
+  });
 }
 
 function formatExecutionMode(mode: string): string {
