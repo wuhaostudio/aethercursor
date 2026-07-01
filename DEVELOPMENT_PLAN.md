@@ -54,6 +54,10 @@ Recent fixes:
 - The transparent overlay window is shown by the native `Alt+Shift+S` shortcut,
   positioned on the cursor monitor, and hidden when the smart cursor session
   returns to normal.
+- Cloud vision and table agents now use OpenAI-compatible image content when an
+  uploadable selected-region image is available.
+- Table extraction results can be parsed into structured columns and rows and
+  rendered in the Result Canvas.
 
 ## New Product Direction
 
@@ -465,22 +469,25 @@ Completed:
 
 Current validation count:
 
-- 151 tests across 26 test files.
+- 155 tests across 26 test files.
 
 ## Known Gaps
 
 - Desktop overlay interaction is implemented for the current Windows/Tauri
   phase, but broader OS-specific polish may still be needed after manual use on
   varied monitor and focus configurations.
-- Current cloud vision/table agents are routed, but the cloud adapter is still
-  text-only.
+- Current cloud vision/table agents use OpenAI-compatible image content, but
+  provider compatibility still needs manual validation against configured cloud
+  endpoints.
+- Native capture currently produces BMP artifacts; PNG/JPEG conversion may be
+  needed for providers that reject `image/bmp`.
 - Real selected text extraction through UI Automation or browser DOM bridge is
   not implemented.
 - Cross-platform native capture beyond Windows is not implemented.
 
 ## Next
 
-Next unfinished phase: P22 Context Resolver Upgrade.
+Next unfinished phase: P24 Provider Compatibility and Image Format Portability.
 
 ## Roadmap
 
@@ -743,7 +750,7 @@ Exit standard:
 
 ### P23: Real Vision and Table Capability Adapters
 
-Status: deferred.
+Status: `Completely`
 
 Goal:
 
@@ -756,9 +763,51 @@ Required:
 - Structured table output rendering in Result Canvas.
 - Tests for adapter request construction and error handling.
 
+Completed:
+
+- Cloud image-capable agents now send multimodal OpenAI-compatible chat content
+  with text and `image_url` parts.
+- `data:image/*` refs can be uploaded directly.
+- Tauri `local://capture/{context_id}.bmp` refs are read through the native
+  capture bridge and converted to `data:image/bmp;base64,...`.
+- Vision analysis uses an image-region prompt instead of the previous text-only
+  prompt.
+- Table extraction asks for strict JSON and parses `{ columns, rows }` into
+  `AgentResult.output.table`.
+- Result Canvas renders parsed table output as a compact structured table.
+- Action labels distinguish visual analysis and table extraction from generic
+  explanation or OCR.
+- Cloud permission copy states whether selected text or the selected image
+  region will be uploaded.
+- Added focused tests for multimodal request construction, local image-ref
+  conversion, missing-image errors, and table JSON parsing.
+- Added `docs/p23-validation.md` validation record.
+
 Exit standard:
 
 - Vision and table capabilities no longer return generic text-only cloud output.
+
+### P24: Provider Compatibility and Image Format Portability
+
+Status: deferred.
+
+Goal:
+
+- Validate and harden real provider behavior for cloud vision and table agents.
+
+Required:
+
+- Manual validation against at least one configured OpenAI-compatible vision
+  endpoint.
+- Convert native BMP capture artifacts to PNG or JPEG when the provider does
+  not accept `image/bmp`.
+- Add provider-specific error messages for unsupported image formats or models.
+- Document recommended cloud model configuration for image-capable agents.
+
+Exit standard:
+
+- A user can run vision analysis and table extraction against a documented
+  provider configuration without changing code.
 
 ## Verification
 

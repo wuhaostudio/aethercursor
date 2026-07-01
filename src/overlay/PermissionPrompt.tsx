@@ -20,7 +20,7 @@ export function PermissionPrompt({ selectionBox, action, onConfirm, onCancel }: 
         <span>云端权限</span>
         <small>级别 {action.policy_decision.privacy_level}</small>
       </header>
-      <p>{action.manifest.name} 需要云端处理以执行{formatIntent(action.intent)}。</p>
+      <p>{action.manifest.name} 需要云端处理以执行{formatIntent(action.intent)}，将上传{formatUploadedContent(action)}。</p>
       <p className="permission-prompt__reason">{action.policy_decision.reason}</p>
       <div className="permission-prompt__actions">
         <button type="button" onClick={onCancel}>
@@ -32,6 +32,18 @@ export function PermissionPrompt({ selectionBox, action, onConfirm, onCancel }: 
       </div>
     </section>
   );
+}
+
+function formatUploadedContent(action: RoutedAgent): string {
+  if (action.manifest.input_types.includes("image_region") || action.manifest.input_types.includes("screen_region")) {
+    return "所选图像区域";
+  }
+
+  if (action.manifest.input_types.includes("ocr_text") || action.manifest.input_types.includes("text")) {
+    return "所选文本";
+  }
+
+  return "所选上下文";
 }
 
 function formatIntent(intent: string): string {

@@ -196,6 +196,33 @@
   line-height: 1.45;
 }
 
+.result-canvas__table-wrap {
+  max-width: 100%;
+  overflow: auto;
+}
+
+.result-canvas__table {
+  width: 100%;
+  min-width: 260px;
+  border-collapse: collapse;
+  color: var(--overlay-text);
+  font-size: 0.78rem;
+}
+
+.result-canvas__table th,
+.result-canvas__table td {
+  border: 1px solid rgba(120, 220, 255, 0.14);
+  padding: 5px 6px;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.result-canvas__table th {
+  color: var(--overlay-muted-text);
+  font-weight: 600;
+}
+
 .result-canvas__block--error {
   border-color: rgba(255, 130, 130, 0.34);
 }

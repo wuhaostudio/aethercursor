@@ -23,6 +23,44 @@ const mockManifest: AgentManifest = {
   }
 };
 
+const visionManifest: AgentManifest = {
+  id: "agent.cloud.vision-analyze",
+  name: "Vision",
+  version: "0.1.0",
+  description: "Cloud vision agent",
+  capabilities: ["image_understanding", "explain"],
+  input_types: ["image_region", "screen_region"],
+  output_types: ["markdown", "plain_text"],
+  execution_mode: "cloud",
+  latency_level: "long",
+  cost_level: "high",
+  required_permissions: ["screen_region_read", "cloud_upload", "image_upload"],
+  privacy_policy: {
+    requires_upload: true,
+    sensitive_data_allowed: false,
+    user_confirmation: "every_time"
+  }
+};
+
+const tableManifest: AgentManifest = {
+  id: "agent.cloud.table-extract",
+  name: "Table",
+  version: "0.1.0",
+  description: "Cloud table extraction agent",
+  capabilities: ["table_extraction", "extract_text"],
+  input_types: ["image_region", "screen_region", "ocr_text"],
+  output_types: ["key_value", "markdown", "plain_text"],
+  execution_mode: "cloud",
+  latency_level: "medium",
+  cost_level: "medium",
+  required_permissions: ["screen_region_read", "cloud_upload"],
+  privacy_policy: {
+    requires_upload: true,
+    sensitive_data_allowed: false,
+    user_confirmation: "first_time"
+  }
+};
+
 function createContext(overrides: Partial<ContextProtocol> = {}): ContextProtocol {
   return {
     context_id: "ctx_test123",
@@ -251,5 +289,154 @@ describe("cloudLlmAdapter", () => {
 
     expect(result.status).toBe("error");
     expect(result.error?.code).toBe("cloud_api_failed");
+  });
+
+  it("sends image content for vision agents", async () => {
+    setCloudServiceConfig({ api_key: "sk-test", model: "vision-model" });
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          choices: [{ message: { content: "The region shows a settings panel." } }]
+        }),
+      text: () => Promise.resolve("")
+    });
+
+    const context = createContext({
+      content: {
+        selected_text: null,
+        ocr_text: null,
+        image_ref: "data:image/png;base64,abc123"
+      }
+    });
+
+    const result = await executeCloudLlmAgent(
+      {
+        manifest: visionManifest,
+        context,
+        intent: "explain"
+      },
+      { fetchImpl: mockFetch as unknown as typeof fetch, now: () => 0 }
+    );
+
+    expect(result.status).toBe("success");
+    expect(result.output.explanation).toBe("The region shows a settings panel.");
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.model).toBe("vision-model");
+    expect(body.messages[0].content).toEqual([
+      {
+        type: "text",
+        text: expect.stringContaining("Analyze the selected image region")
+      },
+      {
+        type: "image_url",
+        image_url: {
+          url: "data:image/png;base64,abc123"
+        }
+      }
+    ]);
+  });
+
+  it("converts local image refs through the injected image reader", async () => {
+    setCloudServiceConfig({ api_key: "sk-test" });
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          choices: [{ message: { content: "Image analysis." } }]
+        }),
+      text: () => Promise.resolve("")
+    });
+    const readImageAsDataUrl = vi.fn().mockResolvedValue("data:image/bmp;base64,converted");
+
+    const result = await executeCloudLlmAgent(
+      {
+        manifest: visionManifest,
+        context: createContext(),
+        intent: "explain"
+      },
+      {
+        fetchImpl: mockFetch as unknown as typeof fetch,
+        readImageAsDataUrl,
+        now: () => 0
+      }
+    );
+
+    expect(result.status).toBe("success");
+    expect(readImageAsDataUrl).toHaveBeenCalledTimes(1);
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.messages[0].content[1].image_url.url).toBe("data:image/bmp;base64,converted");
+  });
+
+  it("returns image_unavailable for vision agents without uploadable pixels", async () => {
+    setCloudServiceConfig({ api_key: "sk-test" });
+
+    const result = await executeCloudLlmAgent(
+      {
+        manifest: visionManifest,
+        context: createContext({
+          content: {
+            selected_text: null,
+            ocr_text: null,
+            image_ref: null
+          }
+        }),
+        intent: "explain"
+      },
+      { now: () => 0 }
+    );
+
+    expect(result.status).toBe("error");
+    expect(result.error?.code).toBe("image_unavailable");
+  });
+
+  it("parses table JSON from cloud table extraction results", async () => {
+    setCloudServiceConfig({ api_key: "sk-test" });
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          choices: [
+            {
+              message: {
+                content: "```json\n{\"columns\":[\"Name\",\"Score\"],\"rows\":[[\"Ada\",\"98\"],[\"Lin\",\"91\"]]}\n```"
+              }
+            }
+          ]
+        }),
+      text: () => Promise.resolve("")
+    });
+
+    const result = await executeCloudLlmAgent(
+      {
+        manifest: tableManifest,
+        context: createContext({
+          content: {
+            selected_text: null,
+            ocr_text: null,
+            image_ref: "data:image/png;base64,table"
+          }
+        }),
+        intent: "extract_text"
+      },
+      { fetchImpl: mockFetch as unknown as typeof fetch, now: () => 0 }
+    );
+
+    expect(result.status).toBe("success");
+    expect(result.output.table).toEqual({
+      columns: ["Name", "Score"],
+      rows: [
+        ["Ada", "98"],
+        ["Lin", "91"]
+      ]
+    });
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.messages[0].content[0].text).toContain("Return only JSON");
   });
 });

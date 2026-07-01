@@ -4,6 +4,11 @@ import type { OverlaySelectionBox } from "./overlayModel";
 import type { RoutedAgent } from "../agents/agentRegistry";
 import { positionFloatingNearSelection } from "./floatingPosition";
 
+interface ResultTable {
+  readonly columns: readonly string[];
+  readonly rows: readonly (readonly string[])[];
+}
+
 interface ResultCanvasProps {
   readonly selectionBox: OverlaySelectionBox | null;
   readonly context: ContextProtocol | null;
@@ -42,6 +47,7 @@ export function ResultCanvas({
   const sourceText = context?.content.selected_text ?? context?.content.ocr_text ?? "选中的屏幕区域";
   const translation = getOutputText(result, "translation");
   const explanation = getOutputText(result, "explanation");
+  const table = getOutputTable(result);
 
   return (
     <section
@@ -83,6 +89,31 @@ export function ResultCanvas({
         <h3>翻译</h3>
         <p>{translation ?? "选中区域的翻译结果。"}</p>
       </div>
+      {table ? (
+        <div className="result-canvas__block">
+          <h3>表格</h3>
+          <div className="result-canvas__table-wrap">
+            <table className="result-canvas__table">
+              <thead>
+                <tr>
+                  {table.columns.map((column, index) => (
+                    <th key={`${column}:${index}`}>{column}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {table.rows.map((row, rowIndex) => (
+                  <tr key={rowIndex}>
+                    {table.columns.map((_, cellIndex) => (
+                      <td key={cellIndex}>{row[cellIndex] ?? ""}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
       <div className="result-canvas__block">
         <h3>解释</h3>
         <p>{explanation ?? result?.output.text ?? "选中区域的解释说明。"}</p>
@@ -117,4 +148,29 @@ function getOutputText(result: AgentResult | null, key: string): string | null {
   const value = result?.output[key];
 
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function getOutputTable(result: AgentResult | null): ResultTable | null {
+  const value = result?.output.table;
+
+  if (!isResultTable(value) || value.columns.length === 0) {
+    return null;
+  }
+
+  return value;
+}
+
+function isResultTable(value: unknown): value is ResultTable {
+  if (typeof value !== "object" || value === null || !("columns" in value) || !("rows" in value)) {
+    return false;
+  }
+
+  const table = value as Record<string, unknown>;
+
+  return (
+    Array.isArray(table.columns) &&
+    table.columns.every((column) => typeof column === "string") &&
+    Array.isArray(table.rows) &&
+    table.rows.every((row) => Array.isArray(row) && row.every((cell) => typeof cell === "string"))
+  );
 }

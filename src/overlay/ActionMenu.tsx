@@ -23,7 +23,7 @@ export function ActionMenu({ selectionBox, actions, onSelect }: ActionMenuProps)
             title={action.manifest.name}
             onClick={() => onSelect(action)}
           >
-            {formatIntent(action.intent)}
+            {formatActionLabel(action)}
             {formatPolicyStatus(action)}
           </button>
         ))
@@ -32,6 +32,18 @@ export function ActionMenu({ selectionBox, actions, onSelect }: ActionMenuProps)
       )}
     </div>
   );
+}
+
+function formatActionLabel(action: RoutedAgent): string {
+  if (action.manifest.capabilities.includes("table_extraction")) {
+    return "提取表格";
+  }
+
+  if (action.manifest.capabilities.includes("image_understanding") && action.intent === "explain") {
+    return "视觉分析";
+  }
+
+  return formatIntent(action.intent);
 }
 
 function formatIntent(intent: string): string {
